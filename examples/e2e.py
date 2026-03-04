@@ -1,23 +1,3 @@
-"""
-Builder Code E2E Test
-
-Tests the full builder fee attribution flow on Polymarket CLOB (Amoy staging):
-1. Login to Gamma, create builder profile with fees
-2. Setup CLOB clients for builder + two users (derive/create API keys)
-3. Fund users with PMCT (mint USDC -> wrap) + set approvals
-4. Fetch orderbook, derive prices
-5. User A places BUY YES (maker, resting GTC, with builder code)
-6. User B places BUY NO (taker, GTC, with builder code) -> match
-7. Query builder trades (if BUILDER_SERVICE_URL is set)
-
-Usage:
-    cd examples
-    pip install -r requirements.txt
-    pip install -e ..
-    cp .env.example .env   # then fill in values
-    python e2e.py
-"""
-
 import base64
 import json
 import os
