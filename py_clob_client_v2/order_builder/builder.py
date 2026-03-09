@@ -280,14 +280,17 @@ class OrderBuilder:
 
         total = 0
         for p in reversed(positions):
-            total += float(p.size) * float(p.price)
+            size = p["size"] if isinstance(p, dict) else p.size
+            price = p["price"] if isinstance(p, dict) else p.price
+            total += float(size) * float(price)
             if total >= amount_to_match:
-                return float(p.price)
+                return float(price)
 
         if order_type == OrderType.FOK:
             raise Exception("no match")
 
-        return float(positions[0].price)
+        p0 = positions[0]
+        return float(p0["price"] if isinstance(p0, dict) else p0.price)
 
     def calculate_sell_market_price(
         self,
@@ -300,11 +303,14 @@ class OrderBuilder:
 
         total = 0
         for p in reversed(positions):
-            total += float(p.size)
+            size = p["size"] if isinstance(p, dict) else p.size
+            price = p["price"] if isinstance(p, dict) else p.price
+            total += float(size)
             if total >= amount_to_match:
-                return float(p.price)
+                return float(price)
 
         if order_type == OrderType.FOK:
             raise Exception("no match")
 
-        return float(positions[0].price)
+        p0 = positions[0]
+        return float(p0["price"] if isinstance(p0, dict) else p0.price)

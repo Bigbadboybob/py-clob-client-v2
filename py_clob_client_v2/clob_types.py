@@ -6,7 +6,7 @@ from typing import Literal
 from .constants import ZERO_ADDRESS, BYTES32_ZERO
 
 
-class OrderType(enumerate):
+class OrderType:
     GTC = "GTC"
     FOK = "FOK"
     GTD = "GTD"
@@ -211,7 +211,7 @@ class OrderBookSummary:
         return dumps(self.__dict__, separators=(",", ":"))
 
 
-class AssetType(enumerate):
+class AssetType:
     COLLATERAL = "COLLATERAL"
     CONDITIONAL = "CONDITIONAL"
 
@@ -293,7 +293,7 @@ class BuilderConfig:
     builder_address: str
     """Builder's Ethereum address"""
 
-    builder_code: str = ZERO_ADDRESS
+    builder_code: str = BYTES32_ZERO
     """Builder code (bytes32) appended to orders"""
 
 
