@@ -290,7 +290,7 @@ class ContractConfig:
 class BuilderConfig:
     """Builder configuration for fee attribution"""
 
-    builder_address: str
+    builder_address: str = ""
     """Builder's Ethereum address"""
 
     builder_code: str = BYTES32_ZERO
