@@ -738,7 +738,7 @@ class ClobClient:
             )
             if order_args.user_usdc_balance <= total_cost:
                 order_args.amount = self._calculate_fee_adjusted_amount(
-                    order_args.amount,
+                    order_args.user_usdc_balance,
                     price,
                     self.__fee_rates.get(token_id, 0),
                     self.__fee_exponents.get(token_id, 0),
