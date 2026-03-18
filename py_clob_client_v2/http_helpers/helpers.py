@@ -40,6 +40,8 @@ def _is_transient_error(exc: Exception, status_code: int = None) -> bool:
     """
     if status_code is not None and 500 <= status_code < 600:
         return True
+    if isinstance(exc, PolyApiException) and exc.status_code is None:
+        return True
     return isinstance(
         exc,
         (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError),
