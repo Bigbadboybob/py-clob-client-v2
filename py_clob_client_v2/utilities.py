@@ -95,7 +95,6 @@ def order_to_json_v2(
             "makerAmount": order.makerAmount,
             "takerAmount": order.takerAmount,
             "side": side,
-            "expiration": order.expiration,
             "signatureType": int(order.signatureType),
             "timestamp": order.timestamp,
             "metadata": order.metadata,

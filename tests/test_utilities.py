@@ -119,7 +119,6 @@ class TestUtilities(TestCase):
                         price=0.5,
                         size=100,
                         side=side,
-                        expiration=0,
                     ),
                     CreateOrderOptions(tick_size="0.1", neg_risk=False),
                 )
@@ -131,7 +130,6 @@ class TestUtilities(TestCase):
                 self.assertIsNotNone(o["tokenId"])
                 self.assertIsNotNone(o["makerAmount"])
                 self.assertIsNotNone(o["takerAmount"])
-                self.assertIsNotNone(o["expiration"])
                 self.assertIsNotNone(o["signatureType"])
                 self.assertIsNotNone(o["signature"])
                 # V2-specific fields

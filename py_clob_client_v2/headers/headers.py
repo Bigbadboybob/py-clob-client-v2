@@ -67,9 +67,3 @@ def create_level_2_headers(
         POLY_API_KEY: creds.api_key,
         POLY_PASSPHRASE: creds.api_passphrase,
     }
-
-
-def enrich_l2_headers_with_builder_headers(
-    headers: dict, builder_headers: dict
-) -> dict:
-    return {**headers, **builder_headers}

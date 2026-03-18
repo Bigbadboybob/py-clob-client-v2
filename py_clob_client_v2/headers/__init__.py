@@ -7,5 +7,4 @@ from .headers import (
     POLY_PASSPHRASE,
     create_level_1_headers,
     create_level_2_headers,
-    enrich_l2_headers_with_builder_headers,
 )

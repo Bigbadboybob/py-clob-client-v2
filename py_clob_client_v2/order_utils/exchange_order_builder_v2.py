@@ -64,7 +64,6 @@ class ExchangeOrderBuilderV2:
                 if order_data.signatureType is not None
                 else SignatureTypeV2.EOA
             ),
-            expiration=order_data.expiration if order_data.expiration else "0",
             timestamp=(
                 order_data.timestamp
                 if order_data.timestamp

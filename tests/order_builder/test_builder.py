@@ -546,15 +546,6 @@ class TestOrderBuilder(TestCase):
                 )
                 self._assert_signed_order_v2(order)
 
-    def test_build_order_with_expiration(self):
-        builder = OrderBuilder(signer)
-        order = builder.build_order(
-            OrderArgsV2(token_id=TOKEN_ID, price=0.5, size=100, side=BUY, expiration=9999999999),
-            CreateOrderOptions(tick_size="0.1", neg_risk=False),
-        )
-        self._assert_signed_order_v2(order)
-        self.assertEqual(order.expiration, "9999999999")
-
     def test_build_order_with_builder_code(self):
         builder = OrderBuilder(signer)
         builder_code = "0x" + "ab" * 32
@@ -591,7 +582,6 @@ class TestOrderBuilder(TestCase):
         )
         self._assert_signed_order_v2(order)
         self.assertEqual(order.side, Side.BUY)
-        self.assertEqual(order.expiration, "0")
 
     def test_build_market_order_sell_0_1(self):
         builder = OrderBuilder(signer)
@@ -601,7 +591,6 @@ class TestOrderBuilder(TestCase):
         )
         self._assert_signed_order_v2(order)
         self.assertEqual(order.side, Side.SELL)
-        self.assertEqual(order.expiration, "0")
 
     def test_build_market_order_0_01(self):
         builder = OrderBuilder(signer)

@@ -82,11 +82,11 @@ class OrderArgsV2:
     side: str
     """Side of the order"""
 
-    expiration: int = 0
-    """Timestamp after which the order is expired"""
-
     builder_code: str = BYTES32_ZERO
     """Builder code (bytes32) for builder fee attribution"""
+
+    metadata: str = BYTES32_ZERO
+    """Optional metadata (bytes32) attached to the order"""
 
 
 # Alias: default to V2
@@ -147,6 +147,9 @@ class MarketOrderArgsV2:
 
     builder_code: str = BYTES32_ZERO
     """Builder code (bytes32) for builder fee attribution"""
+
+    metadata: str = BYTES32_ZERO
+    """Optional metadata (bytes32) attached to the order"""
 
 
 # Alias: default to V2

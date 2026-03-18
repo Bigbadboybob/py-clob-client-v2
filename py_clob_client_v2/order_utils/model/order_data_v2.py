@@ -15,7 +15,6 @@ class OrderDataV2:
     takerAmount: str
     side: Side
     signer: Optional[str] = None
-    expiration: Optional[str] = None
     signatureType: Optional[SignatureTypeV2] = None
     timestamp: Optional[str] = None
     metadata: Optional[str] = None
@@ -34,7 +33,6 @@ class OrderV2:
     takerAmount: str
     side: Side
     signatureType: SignatureTypeV2
-    expiration: str
     timestamp: str
     metadata: str
     builder: str

@@ -179,10 +179,9 @@ class OrderBuilder:
                 takerAmount=str(taker_amount),
                 side=side,
                 signer=self.signer.address(),
-                expiration=str(order_args.expiration),
                 signatureType=self.signature_type,
                 timestamp=ts,
-                metadata=BYTES32_ZERO,
+                metadata=getattr(order_args, "metadata", BYTES32_ZERO),
                 builder=order_args.builder_code,
             )
             builder = ExchangeOrderBuilderV2(
@@ -255,10 +254,9 @@ class OrderBuilder:
                 takerAmount=str(taker_amount),
                 side=side,
                 signer=self.signer.address(),
-                expiration="0",
                 signatureType=self.signature_type,
                 timestamp=ts,
-                metadata=BYTES32_ZERO,
+                metadata=getattr(order_args, "metadata", BYTES32_ZERO),
                 builder=order_args.builder_code,
             )
             builder = ExchangeOrderBuilderV2(
