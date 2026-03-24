@@ -57,13 +57,13 @@ def adjust_market_buy_amount(
     builder_taker_fee_rate: float = 0,
 ) -> float:
     """Return fee-adjusted amount for a market buy, or the original amount if balance is sufficient."""
-    platform_fee_rate = fee_rate * (price * (1 - price)) ** fee_exponent
-
     d_amount = Decimal(str(amount))
     d_price = Decimal(str(price))
     d_balance = Decimal(str(user_usdc_balance))
-    d_pfr = Decimal(str(platform_fee_rate))
+    d_fee_rate = Decimal(str(fee_rate))
+    d_fee_exponent = Decimal(str(fee_exponent))
     d_btr = Decimal(str(builder_taker_fee_rate))
+    d_pfr = d_fee_rate * (d_price * (Decimal("1") - d_price)) ** d_fee_exponent
 
     platform_fee = d_amount / d_price * d_pfr
     total_cost = d_amount + platform_fee + d_amount * d_btr

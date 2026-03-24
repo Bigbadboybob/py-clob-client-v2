@@ -720,9 +720,9 @@ class ClobClient:
                 order_args.builder_code = self.builder_config.builder_code
 
         builder_code = getattr(order_args, "builder_code", BYTES32_ZERO)
-        self.__ensure_builder_fee_rate_cached(builder_code)
 
         if order_args.side == "BUY" and order_args.user_usdc_balance:
+            self.__ensure_builder_fee_rate_cached(builder_code)
             builder_taker_fee_rate = (
                 self.__builder_fee_rates[builder_code].taker
                 if builder_code and builder_code != BYTES32_ZERO and builder_code in self.__builder_fee_rates
@@ -982,7 +982,7 @@ class ClobClient:
                 taker=result.get("builder_taker_fee_rate_bps", 0) / BUILDER_FEES_BPS,
             )
         except Exception:
-            self.__builder_fee_rates[builder_code] = BuilderFeeRate(maker=0, taker=0)
+            logging.warning("failed to fetch builder fee rate for %s, will retry on next order", builder_code)
 
     def __ensure_market_info_cached(self, token_id: str):
         if token_id in self.__market_info_fetched:

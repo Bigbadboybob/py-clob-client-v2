@@ -327,14 +327,6 @@ class BuilderFeeRate:
 
 
 @dataclass
-class BuilderCode:
-    code: str = ""
-    builder_maker_fee_rate_bps: int = 0
-    builder_taker_fee_rate_bps: int = 0
-    enabled: bool = False
-
-
-@dataclass
 class ClobToken:
     """A YES or NO token in a CLOB market"""
 
