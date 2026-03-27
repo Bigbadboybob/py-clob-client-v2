@@ -282,7 +282,7 @@ class ClobClient:
             token_id = token["t"]
             self.__token_condition_map[token_id] = condition_id
             self.__tick_sizes[token_id] = str(result["mts"])
-            self.__neg_risk[token_id] = result["nr"]
+            self.__neg_risk[token_id] = result.get("nr", False)
 
             fd = result.get("fd") or {}
             self.__fee_infos[token_id] = FeeInfo(
