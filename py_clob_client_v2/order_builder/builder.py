@@ -137,7 +137,7 @@ class OrderBuilder:
         )
 
         contract_config = get_contract_config(self.signer.get_chain_id())
-        ts = str(int(time.time()))
+        ts = str(time.time_ns() // 1_000_000)
 
         if version == 1:
             if self.signature_type == SignatureTypeV2.POLY_1271:
@@ -213,7 +213,7 @@ class OrderBuilder:
         )
 
         contract_config = get_contract_config(self.signer.get_chain_id())
-        ts = str(int(time.time()))
+        ts = str(time.time_ns() // 1_000_000)
 
         if version == 1:
             if self.signature_type == SignatureTypeV2.POLY_1271:

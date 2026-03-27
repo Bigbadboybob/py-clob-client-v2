@@ -67,7 +67,7 @@ class ExchangeOrderBuilderV2:
             timestamp=(
                 order_data.timestamp
                 if order_data.timestamp
-                else str(int(time.time()))
+                else str(time.time_ns() // 1_000_000)
             ),
             metadata=order_data.metadata if order_data.metadata else BYTES32_ZERO,
             builder=order_data.builder if order_data.builder else BYTES32_ZERO,
