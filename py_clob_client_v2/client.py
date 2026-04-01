@@ -358,7 +358,9 @@ class ClobClient:
     def get_midpoints(self, params: list):
         return self._post(f"{self.host}{GET_MIDPOINTS}", data=params)
 
-    def get_price(self, token_id: str, side: str):
+    def get_price(self, token_id: str, side):
+        if isinstance(side, int):
+            side = "BUY" if side == Side.BUY else "SELL"
         return self._get(
             f"{self.host}{GET_PRICE}", params={"token_id": token_id, "side": side}
         )

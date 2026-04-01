@@ -33,6 +33,11 @@ class BookParams:
     token_id: str
     side: str = ""
 
+    def __post_init__(self):
+        # Accept Side IntEnum (BUY=0, SELL=1) as well as plain strings
+        if isinstance(self.side, int):
+            self.side = "BUY" if self.side == 0 else "SELL"
+
 
 @dataclass
 class OrderArgsV1:
