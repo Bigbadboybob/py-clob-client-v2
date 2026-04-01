@@ -116,6 +116,7 @@ from .utilities import (
 )
 from .order_utils.model.order_data_v1 import order_to_json_v1
 from .order_utils.model.order_data_v2 import order_to_json_v2
+from .order_utils.model.side import Side
 
 logger = logging.getLogger(__name__)
 
@@ -406,7 +407,7 @@ class ClobClient:
         book = self.get_order_book(token_id)
         if not book:
             raise PolyException("no orderbook")
-        if side == "BUY":
+        if side == "BUY" or side == Side.BUY:
             asks = book.get("asks") if isinstance(book, dict) else book.asks
             if not asks:
                 raise PolyException("no match")
@@ -713,7 +714,7 @@ class ClobClient:
 
         builder_code = getattr(order_args, "builder_code", BYTES32_ZERO)
 
-        if order_args.side == "BUY" and order_args.user_usdc_balance:
+        if (order_args.side == "BUY" or order_args.side == Side.BUY) and order_args.user_usdc_balance:
             self.__ensure_builder_fee_rate_cached(builder_code)
             builder_taker_fee_rate = (
                 self.__builder_fee_rates[builder_code].taker
