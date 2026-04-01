@@ -389,6 +389,8 @@ class ClobClient:
             p["endTs"] = params.end_ts
         if params.fidelity is not None:
             p["fidelity"] = params.fidelity
+        if params.interval is not None:
+            p["interval"] = params.interval
         return self._get(f"{self.host}{GET_PRICES_HISTORY}", params=p)
 
     def get_market_trades_events(self, condition_id: str):

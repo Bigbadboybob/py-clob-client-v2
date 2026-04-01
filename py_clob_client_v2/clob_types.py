@@ -419,12 +419,21 @@ class BuilderApiKeyResponse:
     revoked_at: Optional[str] = None
 
 
+class PriceHistoryInterval:
+    MAX = "max"
+    ONE_WEEK = "1w"
+    ONE_DAY = "1d"
+    SIX_HOURS = "6h"
+    ONE_HOUR = "1h"
+
+
 @dataclass
 class PricesHistoryParams:
     market: str = None
     start_ts: int = None
     end_ts: int = None
     fidelity: int = None
+    interval: str = None
 
 
 @dataclass
