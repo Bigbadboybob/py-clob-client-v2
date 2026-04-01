@@ -280,7 +280,7 @@ class ContractConfig:
     """The V1 neg risk exchange contract"""
 
     collateral: str
-    """The ERC20 token used as collateral (USDC)"""
+    """The ERC20 collateral token"""
 
     conditional_tokens: str
     """The ERC1155 conditional tokens contract"""
