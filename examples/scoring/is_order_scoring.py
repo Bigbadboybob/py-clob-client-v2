@@ -22,7 +22,7 @@ def main():
     client = ClobClient(host=host, chain_id=chain_id, key=pk, creds=creds)
 
     scoring = client.is_order_scoring(OrderScoringParams(
-        order_id="0x69509d1a8b98ce5c87c2c84beb9355d9ab9f7b2c29dc7346fd4fca64b5e8584d",
+        orderId="0x69509d1a8b98ce5c87c2c84beb9355d9ab9f7b2c29dc7346fd4fca64b5e8584d",
     ))
     print(scoring)
 

@@ -34,19 +34,19 @@ def main():
     orders = [
         PostOrdersV2Args(
             order=client.create_order(OrderArgs(token_id=YES, price=0.4, side=Side.BUY, size=100), options),
-            order_type=OrderType.GTC,
+            orderType=OrderType.GTC,
         ),
         PostOrdersV2Args(
             order=client.create_order(OrderArgs(token_id=YES, price=0.45, side=Side.BUY, size=100), options),
-            order_type=OrderType.GTC,
+            orderType=OrderType.GTC,
         ),
         PostOrdersV2Args(
             order=client.create_order(OrderArgs(token_id=YES, price=0.55, side=Side.SELL, size=100), options),
-            order_type=OrderType.GTC,
+            orderType=OrderType.GTC,
         ),
         PostOrdersV2Args(
             order=client.create_order(OrderArgs(token_id=YES, price=0.6, side=Side.SELL, size=100), options),
-            order_type=OrderType.GTC,
+            orderType=OrderType.GTC,
         ),
     ]
 
