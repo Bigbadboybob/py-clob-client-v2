@@ -782,12 +782,11 @@ class ClobClient:
         order_args: MarketOrderArgsV2,
         options: PartialCreateOrderOptions = None,
         order_type: OrderType = OrderType.FOK,
-        post_only: bool = False,
         defer_exec: bool = False,
     ):
         return self._retry_on_version_update(
             lambda: self.post_order(
-                self.create_market_order(order_args, options), order_type, post_only, defer_exec
+                self.create_market_order(order_args, options), order_type, False, defer_exec
             )
         )
 
@@ -799,6 +798,8 @@ class ClobClient:
         defer_exec: bool = False,
     ):
         self.assert_level_2_auth()
+        if post_only and order_type in (OrderType.FOK, OrderType.FAK):
+            raise ValueError("post_only is not supported for FOK/FAK orders")
 
         owner = self.creds.api_key or ""
         order_payload = (
