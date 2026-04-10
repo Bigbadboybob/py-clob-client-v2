@@ -51,6 +51,7 @@ def order_to_json_v2(
     order: "SignedOrderV2",
     owner: str,
     order_type: str,
+    post_only: bool = False,
     defer_exec: bool = False,
 ) -> dict:
     side = SideString.BUY if order.side == Side.BUY else SideString.SELL
@@ -73,4 +74,5 @@ def order_to_json_v2(
         "owner": owner,
         "orderType": order_type,
         "deferExec": defer_exec,
+        "postOnly": post_only,
     }

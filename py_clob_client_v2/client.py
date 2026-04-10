@@ -768,11 +768,12 @@ class ClobClient:
         order_args: OrderArgsV2,
         options: PartialCreateOrderOptions = None,
         order_type: OrderType = OrderType.GTC,
+        post_only: bool = False,
         defer_exec: bool = False,
     ):
         return self._retry_on_version_update(
             lambda: self.post_order(
-                self.create_order(order_args, options), order_type, defer_exec
+                self.create_order(order_args, options), order_type, post_only, defer_exec
             )
         )
 
@@ -785,7 +786,7 @@ class ClobClient:
     ):
         return self._retry_on_version_update(
             lambda: self.post_order(
-                self.create_market_order(order_args, options), order_type, defer_exec
+                self.create_market_order(order_args, options), order_type, False, defer_exec
             )
         )
 
@@ -793,15 +794,18 @@ class ClobClient:
         self,
         order,
         order_type: OrderType = OrderType.GTC,
+        post_only: bool = False,
         defer_exec: bool = False,
     ):
         self.assert_level_2_auth()
+        if post_only and order_type in (OrderType.FOK, OrderType.FAK):
+            raise ValueError("post_only is not supported for FOK/FAK orders")
 
         owner = self.creds.api_key or ""
         order_payload = (
-            order_to_json_v2(order, owner, order_type, defer_exec)
+            order_to_json_v2(order, owner, order_type, post_only, defer_exec)
             if _is_v2_order(order)
-            else order_to_json_v1(order, owner, order_type, defer_exec)
+            else order_to_json_v1(order, owner, order_type, post_only, defer_exec)
         )
         serialized = json.dumps(order_payload, separators=(",", ":"))
         headers = self._l2_headers(
@@ -815,8 +819,10 @@ class ClobClient:
 
         return res
 
-    def post_orders(self, args: list, defer_exec: bool = False):
+    def post_orders(self, args: list, post_only: bool = False, defer_exec: bool = False):
         self.assert_level_2_auth()
+        if post_only and any(arg.orderType in (OrderType.FOK, OrderType.FAK) for arg in args):
+            raise ValueError("post_only is not supported for FOK/FAK orders")
 
         owner = self.creds.api_key or ""
         orders_payload = []
@@ -824,9 +830,9 @@ class ClobClient:
             order = arg.order
             order_type = arg.orderType
             payload = (
-                order_to_json_v2(order, owner, order_type, defer_exec)
+                order_to_json_v2(order, owner, order_type, post_only, defer_exec)
                 if _is_v2_order(order)
-                else order_to_json_v1(order, owner, order_type, defer_exec)
+                else order_to_json_v1(order, owner, order_type, post_only, defer_exec)
             )
             orders_payload.append(payload)
 
