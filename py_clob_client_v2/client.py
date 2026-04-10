@@ -769,10 +769,11 @@ class ClobClient:
         options: PartialCreateOrderOptions = None,
         order_type: OrderType = OrderType.GTC,
         defer_exec: bool = False,
+        post_only: bool = False,
     ):
         return self._retry_on_version_update(
             lambda: self.post_order(
-                self.create_order(order_args, options), order_type, defer_exec
+                self.create_order(order_args, options), order_type, defer_exec, post_only
             )
         )
 
@@ -782,10 +783,11 @@ class ClobClient:
         options: PartialCreateOrderOptions = None,
         order_type: OrderType = OrderType.FOK,
         defer_exec: bool = False,
+        post_only: bool = False,
     ):
         return self._retry_on_version_update(
             lambda: self.post_order(
-                self.create_market_order(order_args, options), order_type, defer_exec
+                self.create_market_order(order_args, options), order_type, defer_exec, post_only
             )
         )
 
@@ -794,14 +796,15 @@ class ClobClient:
         order,
         order_type: OrderType = OrderType.GTC,
         defer_exec: bool = False,
+        post_only: bool = False,
     ):
         self.assert_level_2_auth()
 
         owner = self.creds.api_key or ""
         order_payload = (
-            order_to_json_v2(order, owner, order_type, defer_exec)
+            order_to_json_v2(order, owner, order_type, defer_exec, post_only)
             if _is_v2_order(order)
-            else order_to_json_v1(order, owner, order_type, defer_exec)
+            else order_to_json_v1(order, owner, order_type, defer_exec, post_only)
         )
         serialized = json.dumps(order_payload, separators=(",", ":"))
         headers = self._l2_headers(
@@ -815,7 +818,7 @@ class ClobClient:
 
         return res
 
-    def post_orders(self, args: list, defer_exec: bool = False):
+    def post_orders(self, args: list, defer_exec: bool = False, post_only: bool = False):
         self.assert_level_2_auth()
 
         owner = self.creds.api_key or ""
@@ -824,9 +827,9 @@ class ClobClient:
             order = arg.order
             order_type = arg.orderType
             payload = (
-                order_to_json_v2(order, owner, order_type, defer_exec)
+                order_to_json_v2(order, owner, order_type, defer_exec, post_only)
                 if _is_v2_order(order)
-                else order_to_json_v1(order, owner, order_type, defer_exec)
+                else order_to_json_v1(order, owner, order_type, defer_exec, post_only)
             )
             orders_payload.append(payload)
 
