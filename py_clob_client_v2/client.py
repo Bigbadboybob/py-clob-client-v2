@@ -90,6 +90,7 @@ from .endpoints import (
     IS_ORDER_SCORING,
     ORDERS,
     PRE_MIGRATION_ORDERS,
+    POST_HEARTBEAT,
     POST_ORDER,
     POST_ORDERS,
     TIME,
@@ -234,6 +235,14 @@ class ClobClient:
 
     def get_ok(self):
         return self._get(f"{self.host}{OK}")
+
+    def post_heartbeat(self, heartbeat_id: str = "") -> dict:
+        body = {"heartbeat_id": heartbeat_id}
+        serialized = json.dumps(body, separators=(",", ":"))
+        headers = self._l2_headers(
+            "POST", POST_HEARTBEAT, body=body, serialized_body=serialized
+        )
+        return self._post(f"{self.host}{POST_HEARTBEAT}", headers=headers, data=serialized)
 
     def get_version(self) -> int:
         try:
