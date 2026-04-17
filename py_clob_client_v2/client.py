@@ -163,6 +163,7 @@ class ClobClient:
         # Caches
         self.__tick_sizes: dict = {}
         self.__neg_risk: dict = {}
+        self.__fee_rates: dict = {}
         self.__fee_infos: dict = {}
         self.__builder_fee_rates: dict = {}
         self.__token_condition_map: dict = {}
@@ -243,7 +244,7 @@ class ClobClient:
 
     def post_heartbeat(self, heartbeat_id: str = "") -> dict:
         body = {"heartbeat_id": heartbeat_id}
-        serialized = json.dumps(body, separators=(",", ":"))
+        serialized = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers(
             "POST", POST_HEARTBEAT, body=body, serialized_body=serialized
         )
@@ -347,19 +348,15 @@ class ClobClient:
         self.__neg_risk[token_id] = result["neg_risk"]
         return self.__neg_risk[token_id]
 
-    def get_fee_rate_bps(self, token_id: str) -> float:
-        if token_id in self.__fee_infos:
-            return self.__fee_infos[token_id].rate
-
-        if token_id in self.__token_condition_map:
-            self.get_clob_market_info(self.__token_condition_map[token_id])
-            return self.__fee_infos[token_id].rate
+    def get_fee_rate_bps(self, token_id: str) -> int:
+        if token_id in self.__fee_rates:
+            return self.__fee_rates[token_id]
 
         result = self._get(
             f"{self.host}{GET_FEE_RATE}", params={"token_id": token_id}
         )
-        self.__fee_infos[token_id] = FeeInfo(rate=result["base_fee"], exponent=0.0)
-        return self.__fee_infos[token_id].rate
+        self.__fee_rates[token_id] = result.get("base_fee") or 0
+        return self.__fee_rates[token_id]
 
     def get_fee_exponent(self, token_id: str) -> float:
         if token_id in self.__fee_infos:
@@ -689,10 +686,9 @@ class ClobClient:
 
         token_id = order_args.token_id
 
-        if not options or not options.tick_size:
-            raise PolyException("tick_size is required in options")
-
-        tick_size = options.tick_size
+        tick_size = self.__resolve_tick_size(
+            token_id, options.tick_size if options else None
+        )
 
         if not price_valid(order_args.price, tick_size):
             ts = float(tick_size)
@@ -707,10 +703,14 @@ class ClobClient:
         )
         version = self.__resolve_version()
 
+        user_fee_rate_bps = getattr(order_args, "fee_rate_bps", None) or None
+        fee_rate_bps = self.__resolve_fee_rate_bps(token_id, user_fee_rate_bps) if version == 1 else None
+
         return self.builder.build_order(
             order_args,
             CreateOrderOptions(tick_size=tick_size, neg_risk=neg_risk),
             version=version,
+            fee_rate_bps=fee_rate_bps,
         )
 
     def create_market_order(
@@ -771,10 +771,14 @@ class ClobClient:
         )
         version = self.__resolve_version()
 
+        user_fee_rate_bps = getattr(order_args, "fee_rate_bps", None) or None
+        fee_rate_bps = self.__resolve_fee_rate_bps(token_id, user_fee_rate_bps) if version == 1 else None
+
         return self.builder.build_market_order(
             order_args,
             CreateOrderOptions(tick_size=tick_size, neg_risk=neg_risk),
             version=version,
+            fee_rate_bps=fee_rate_bps,
         )
 
     def create_and_post_order(
@@ -821,7 +825,7 @@ class ClobClient:
             if _is_v2_order(order)
             else order_to_json_v1(order, owner, order_type, post_only, defer_exec)
         )
-        serialized = json.dumps(order_payload, separators=(",", ":"))
+        serialized = json.dumps(order_payload, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers(
             "POST", POST_ORDER, body=order_payload, serialized_body=serialized
         )
@@ -850,7 +854,7 @@ class ClobClient:
             )
             orders_payload.append(payload)
 
-        serialized = json.dumps(orders_payload, separators=(",", ":"))
+        serialized = json.dumps(orders_payload, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers(
             "POST", POST_ORDERS, body=orders_payload, serialized_body=serialized
         )
@@ -865,13 +869,13 @@ class ClobClient:
     def cancel_order(self, payload: OrderPayload):
         self.assert_level_2_auth()
         body = {"orderID": payload.orderID}
-        serialized = json.dumps(body, separators=(",", ":"))
+        serialized = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers("DELETE", CANCEL, body=body, serialized_body=serialized)
         return self._delete(f"{self.host}{CANCEL}", headers=headers, data=serialized)
 
     def cancel_orders(self, order_hashes: list):
         self.assert_level_2_auth()
-        serialized = json.dumps(order_hashes, separators=(",", ":"))
+        serialized = json.dumps(order_hashes, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers(
             "DELETE", CANCEL_ORDERS, body=order_hashes, serialized_body=serialized
         )
@@ -889,7 +893,7 @@ class ClobClient:
             body["market"] = payload.market
         if payload.asset_id:
             body["asset_id"] = payload.asset_id
-        serialized = json.dumps(body, separators=(",", ":"))
+        serialized = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers(
             "DELETE", CANCEL_MARKET_ORDERS, body=body, serialized_body=serialized
         )
@@ -906,7 +910,7 @@ class ClobClient:
     def are_orders_scoring(self, params: OrdersScoringParams = None):
         self.assert_level_2_auth()
         order_ids = params.orderIds if params else []
-        serialized = json.dumps(order_ids, separators=(",", ":"))
+        serialized = json.dumps(order_ids, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers(
             "POST", ARE_ORDERS_SCORING, body=order_ids, serialized_body=serialized
         )
@@ -1004,7 +1008,7 @@ class ClobClient:
     def delete_readonly_api_key(self, key: str):
         self.assert_level_2_auth()
         body = {"key": key}
-        serialized = json.dumps(body, separators=(",", ":"))
+        serialized = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers("DELETE", DELETE_READONLY_API_KEY, body=body, serialized_body=serialized)
         return self._delete(f"{self.host}{DELETE_READONLY_API_KEY}", headers=headers, data=serialized)
 
@@ -1020,6 +1024,19 @@ class ClobClient:
                 )
             return tick_size
         return min_tick_size
+
+    def __resolve_fee_rate_bps(self, token_id: str, user_fee_rate_bps: int = None) -> int:
+        market_fee_rate_bps = self.get_fee_rate_bps(token_id)
+        if (
+            market_fee_rate_bps > 0
+            and user_fee_rate_bps is not None
+            and user_fee_rate_bps != market_fee_rate_bps
+        ):
+            raise PolyException(
+                f"invalid user provided fee rate: {user_fee_rate_bps}, "
+                f"fee rate for the market must be {market_fee_rate_bps}"
+            )
+        return market_fee_rate_bps
 
     def __resolve_version(self, force_update: bool = False) -> int:
         if not force_update and self.__cached_version is not None:
@@ -1059,7 +1076,7 @@ class ClobClient:
         error = resp.get("error")
         if not error:
             return False
-        message = error if isinstance(error, str) else json.dumps(error)
+        message = error if isinstance(error, str) else json.dumps(error, separators=(",", ":"), ensure_ascii=False)
         return ORDER_VERSION_MISMATCH_ERROR in message
 
     def _retry_on_version_update(self, func):

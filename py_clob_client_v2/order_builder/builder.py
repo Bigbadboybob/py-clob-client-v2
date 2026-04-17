@@ -126,6 +126,7 @@ class OrderBuilder:
         order_args: Union[OrderArgsV1, OrderArgsV2],
         options: CreateOrderOptions,
         version: int = 2,
+        fee_rate_bps: int = None,
     ) -> Union[SignedOrderV1, SignedOrderV2]:
         """
         Creates and signs a limit order.
@@ -152,6 +153,10 @@ class OrderBuilder:
                 if options.neg_risk
                 else contract_config.exchange
             )
+            resolved_fee_rate_bps = (
+                fee_rate_bps if fee_rate_bps is not None
+                else getattr(order_args, "fee_rate_bps", 0)
+            )
             order_data = OrderDataV1(
                 maker=self.funder,
                 taker=getattr(order_args, "taker", ZERO_ADDRESS),
@@ -159,7 +164,7 @@ class OrderBuilder:
                 makerAmount=str(maker_amount),
                 takerAmount=str(taker_amount),
                 side=side,
-                feeRateBps=str(getattr(order_args, "fee_rate_bps", 0)),
+                feeRateBps=str(resolved_fee_rate_bps),
                 nonce=str(getattr(order_args, "nonce", 0)),
                 signer=self.signer.address(),
                 expiration=str(order_args.expiration),
@@ -202,6 +207,7 @@ class OrderBuilder:
         order_args: Union[MarketOrderArgsV1, MarketOrderArgsV2],
         options: CreateOrderOptions,
         version: int = 2,
+        fee_rate_bps: int = None,
     ) -> Union[SignedOrderV1, SignedOrderV2]:
         """
         Creates and signs a market order.
@@ -228,6 +234,10 @@ class OrderBuilder:
                 if options.neg_risk
                 else contract_config.exchange
             )
+            resolved_fee_rate_bps = (
+                fee_rate_bps if fee_rate_bps is not None
+                else getattr(order_args, "fee_rate_bps", 0)
+            )
             order_data = OrderDataV1(
                 maker=self.funder,
                 taker=getattr(order_args, "taker", ZERO_ADDRESS),
@@ -235,7 +245,7 @@ class OrderBuilder:
                 makerAmount=str(maker_amount),
                 takerAmount=str(taker_amount),
                 side=side,
-                feeRateBps=str(getattr(order_args, "fee_rate_bps", 0)),
+                feeRateBps=str(resolved_fee_rate_bps),
                 nonce=str(getattr(order_args, "nonce", 0)),
                 signer=self.signer.address(),
                 expiration="0",

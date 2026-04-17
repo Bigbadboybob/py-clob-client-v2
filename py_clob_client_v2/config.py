@@ -31,6 +31,6 @@ def get_contract_config(chain_id: int) -> ContractConfig:
 
     config = CONFIG.get(chain_id)
     if config is None:
-        raise Exception("Invalid chain_id: {}".format(chain_id))
+        raise Exception(f"Invalid chain_id: {chain_id}")
 
     return config
