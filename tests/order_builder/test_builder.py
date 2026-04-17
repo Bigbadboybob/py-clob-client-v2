@@ -2,12 +2,14 @@ from unittest import TestCase
 
 from py_clob_client_v2.clob_types import (
     CreateOrderOptions,
+    MarketOrderArgsV1,
     MarketOrderArgsV2,
+    OrderArgsV1,
     OrderArgsV2,
     OrderSummary,
     OrderType,
 )
-from py_clob_client_v2.constants import AMOY, BYTES32_ZERO
+from py_clob_client_v2.constants import AMOY, BYTES32_ZERO, ZERO_ADDRESS
 from py_clob_client_v2.order_builder.builder import OrderBuilder, ROUNDING_CONFIG
 from py_clob_client_v2.order_builder.constants import BUY, SELL
 from py_clob_client_v2.order_builder.helpers import decimal_places, round_down, round_normal
@@ -444,6 +446,22 @@ class TestOrderBuilder(TestCase):
                 price = round_normal(price + delta_price, 4)
             size = round_normal(size + delta_size, 2)
 
+    def _assert_signed_order_v1(self, order):
+        self.assertIsNotNone(order.salt)
+        self.assertIsNotNone(order.maker)
+        self.assertIsNotNone(order.signer)
+        self.assertIsNotNone(order.tokenId)
+        self.assertIsNotNone(order.makerAmount)
+        self.assertIsNotNone(order.takerAmount)
+        self.assertIsNotNone(order.signature)
+        self.assertIsNotNone(order.feeRateBps)
+        self.assertIsNotNone(order.nonce)
+        self.assertIsNotNone(order.taker)
+        # V1 has no timestamp, metadata, or builder
+        self.assertFalse(hasattr(order, "timestamp"))
+        self.assertFalse(hasattr(order, "metadata"))
+        self.assertFalse(hasattr(order, "builder"))
+
     def _assert_signed_order_v2(self, order):
         self.assertIsNotNone(order.salt)
         self.assertIsNotNone(order.maker)
@@ -638,6 +656,60 @@ class TestOrderBuilder(TestCase):
                 token_id=TOKEN_ID, amount=50, side=BUY, price=0.5, builder_code=builder_code
             ),
             CreateOrderOptions(tick_size="0.1", neg_risk=False),
+        )
+        self._assert_signed_order_v2(order)
+        self.assertEqual(order.builder, builder_code)
+
+    def test_build_order_v1_has_fee_rate_bps_nonce_taker(self):
+        builder = OrderBuilder(signer)
+        order = builder.build_order(
+            OrderArgsV1(token_id=TOKEN_ID, price=0.5, size=21.04, side=BUY, nonce=7),
+            CreateOrderOptions(tick_size="0.01", neg_risk=False),
+            version=1,
+            fee_rate_bps=1000,
+        )
+        self._assert_signed_order_v1(order)
+        self.assertEqual(order.feeRateBps, "1000")
+        self.assertEqual(order.nonce, "7")
+        self.assertEqual(order.taker, ZERO_ADDRESS)
+
+    def test_build_order_v2_has_no_fee_rate_bps_nonce(self):
+        builder = OrderBuilder(signer)
+        builder_code = "0x" + "ab" * 32
+        order = builder.build_order(
+            OrderArgsV2(
+                token_id=TOKEN_ID, price=0.5, size=21.04, side=BUY,
+                builder_code=builder_code, expiration=1234567,
+            ),
+            CreateOrderOptions(tick_size="0.01", neg_risk=False),
+            version=2,
+        )
+        self._assert_signed_order_v2(order)
+        self.assertEqual(order.builder, builder_code)
+        self.assertEqual(order.expiration, "1234567")
+
+    def test_build_market_order_v1_has_fee_rate_bps_nonce_taker(self):
+        builder = OrderBuilder(signer)
+        order = builder.build_market_order(
+            MarketOrderArgsV1(token_id=TOKEN_ID, amount=21.04, side=BUY, price=0.5, nonce=3),
+            CreateOrderOptions(tick_size="0.01", neg_risk=False),
+            version=1,
+            fee_rate_bps=500,
+        )
+        self._assert_signed_order_v1(order)
+        self.assertEqual(order.feeRateBps, "500")
+        self.assertEqual(order.nonce, "3")
+        self.assertEqual(order.taker, ZERO_ADDRESS)
+
+    def test_build_market_order_v2_has_no_fee_rate_bps_nonce(self):
+        builder = OrderBuilder(signer)
+        builder_code = "0x" + "ef" * 32
+        order = builder.build_market_order(
+            MarketOrderArgsV2(
+                token_id=TOKEN_ID, amount=21.04, side=BUY, price=0.5, builder_code=builder_code
+            ),
+            CreateOrderOptions(tick_size="0.01", neg_risk=False),
+            version=2,
         )
         self._assert_signed_order_v2(order)
         self.assertEqual(order.builder, builder_code)

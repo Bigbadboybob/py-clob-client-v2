@@ -1,13 +1,3 @@
-"""
-Tests for FeeInfo cache correctness in ClobClient.
-
-Aligned with TypeScript clob-client-v2 behavior:
-- getClobMarketInfo always sets feeInfos[tokenId] = FeeInfo(rate=fd?.r ?? 0, exponent=fd?.e ?? 0)
-- Cache presence check is `token_id in __fee_infos` (not None-checking values)
-- _ensureMarketInfoCached returns early if token_id in __fee_infos
-- GET_FEE_RATE fallback sets FeeInfo(rate=X, exponent=0) — overwrites
-"""
-
 from unittest.mock import MagicMock, patch
 import pytest
 
@@ -46,60 +36,53 @@ class TestFeeInfoDefaults:
 
 
 class TestGetFeeRateBps:
-    def test_returns_cached_rate_from_market_info(self):
+    def test_returns_cached_rate_from_fee_rates(self):
+        """Uses __fee_rates cache (separate from __fee_infos)."""
+        client = _make_client()
+        client._ClobClient__fee_rates[TOKEN_ID] = 200
+        with patch.object(client, "_get") as mock_get:
+            rate = client.get_fee_rate_bps(TOKEN_ID)
+        assert rate == 200
+        mock_get.assert_not_called()
+
+    def test_does_not_use_fee_infos_as_cache(self):
+        """Even if __fee_infos is populated, get_fee_rate_bps fetches from endpoint."""
         client = _make_client()
         _inject_market_info(client, TOKEN_ID, rate=0.02, exponent=2.0)
-        assert client.get_fee_rate_bps(TOKEN_ID) == 0.02
-
-    def test_cache_hit_any_fee_info_entry(self):
-        """Any entry in __fee_infos satisfies the cache check."""
-        client = _make_client()
-        client._ClobClient__fee_infos[TOKEN_ID] = FeeInfo(rate=0.03, exponent=0.0)
-        assert client.get_fee_rate_bps(TOKEN_ID) == 0.03
-
-    def test_get_fee_rate_via_condition_map(self):
-        """Falls through to getClobMarketInfo when token is in condition_map but not fee_infos."""
-        client = _make_client()
-        client._ClobClient__token_condition_map[TOKEN_ID] = CONDITION_ID
-
-        clob_market_response = {
-            "t": [{"t": TOKEN_ID}],
-            "mts": "0.01",
-            "nr": False,
-            "fd": {"r": 0.025, "e": 1.0},
-        }
-        with patch.object(client, "_get", return_value=clob_market_response):
+        with patch.object(client, "_get", return_value={"base_fee": 200}) as mock_get:
             rate = client.get_fee_rate_bps(TOKEN_ID)
-
-        assert rate == 0.025
-
-    def test_get_fee_rate_via_get_fee_rate_endpoint(self):
-        """Falls through to GET_FEE_RATE when token not in fee_infos or condition_map."""
-        client = _make_client()
-        with patch.object(client, "_get", return_value={"base_fee": 0.05}) as mock_get:
-            rate = client.get_fee_rate_bps(TOKEN_ID)
-        assert rate == 0.05
+        assert rate == 200
         mock_get.assert_called_once()
 
-    def test_get_fee_rate_endpoint_sets_exponent_zero(self):
-        """GET_FEE_RATE fallback sets exponent to 0 (no exponent from that endpoint)."""
+    def test_get_fee_rate_via_get_fee_rate_endpoint(self):
+        """Falls through to GET_FEE_RATE when token not in __fee_rates."""
         client = _make_client()
-        with patch.object(client, "_get", return_value={"base_fee": 0.04}):
+        with patch.object(client, "_get", return_value={"base_fee": 200}) as mock_get:
+            rate = client.get_fee_rate_bps(TOKEN_ID)
+        assert rate == 200
+        mock_get.assert_called_once()
+
+    def test_stores_in_fee_rates_cache_not_fee_infos(self):
+        """Result is cached in __fee_rates; __fee_infos is not touched."""
+        client = _make_client()
+        with patch.object(client, "_get", return_value={"base_fee": 150}):
             client.get_fee_rate_bps(TOKEN_ID)
+        assert client._ClobClient__fee_rates[TOKEN_ID] == 150
+        assert TOKEN_ID not in client._ClobClient__fee_infos
 
-        fi = client._ClobClient__fee_infos[TOKEN_ID]
-        assert fi.rate == 0.04
-        assert fi.exponent == 0.0
-
-    def test_no_refetch_after_cache_hit(self):
-        """Once in fee_infos, no further _get calls for rate."""
+    def test_no_refetch_after_fee_rates_cache_hit(self):
+        """Once in __fee_rates, no further _get calls."""
         client = _make_client()
-        _inject_market_info(client, TOKEN_ID, rate=0.02, exponent=2.0)
-
+        client._ClobClient__fee_rates[TOKEN_ID] = 100
         with patch.object(client, "_get") as mock_get:
             client.get_fee_rate_bps(TOKEN_ID)
-
         mock_get.assert_not_called()
+
+    def test_zero_when_base_fee_missing(self):
+        client = _make_client()
+        with patch.object(client, "_get", return_value={}):
+            rate = client.get_fee_rate_bps(TOKEN_ID)
+        assert rate == 0
 
 
 class TestGetFeeExponent:
@@ -177,15 +160,17 @@ class TestGetClobMarketInfo:
         assert fi.exponent == 2.0
 
     def test_no_repeated_fetch_after_clob_market_info(self):
-        """After getClobMarketInfo populates fee_infos, get_fee_rate_bps should not re-fetch."""
+        """After getClobMarketInfo populates fee_infos, get_fee_exponent does not re-fetch.
+        get_fee_rate_bps uses its own __fee_rates cache and fetches from endpoint if not set."""
         client = _make_client()
         _inject_market_info(client, TOKEN_ID, rate=0.02, exponent=2.0)
 
-        with patch.object(client, "_get") as mock_get:
-            client.get_fee_rate_bps(TOKEN_ID)
-            client.get_fee_exponent(TOKEN_ID)
+        with patch.object(client, "_get", return_value={"base_fee": 200}):
+            fee_rate = client.get_fee_rate_bps(TOKEN_ID)
+            fee_exponent = client.get_fee_exponent(TOKEN_ID)
 
-        mock_get.assert_not_called()
+        assert fee_rate == 200      # fetched from endpoint (separate __fee_rates cache)
+        assert fee_exponent == 2.0  # served from __fee_infos without re-fetch
 
 
 class TestEnsureMarketInfoCached:
