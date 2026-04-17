@@ -703,7 +703,8 @@ class ClobClient:
         )
         version = self.__resolve_version()
 
-        fee_rate_bps = self.__resolve_fee_rate_bps(token_id) if version == 1 else None
+        user_fee_rate_bps = getattr(order_args, "fee_rate_bps", None) or None
+        fee_rate_bps = self.__resolve_fee_rate_bps(token_id, user_fee_rate_bps) if version == 1 else None
 
         return self.builder.build_order(
             order_args,
@@ -770,7 +771,8 @@ class ClobClient:
         )
         version = self.__resolve_version()
 
-        fee_rate_bps = self.__resolve_fee_rate_bps(token_id) if version == 1 else None
+        user_fee_rate_bps = getattr(order_args, "fee_rate_bps", None) or None
+        fee_rate_bps = self.__resolve_fee_rate_bps(token_id, user_fee_rate_bps) if version == 1 else None
 
         return self.builder.build_market_order(
             order_args,
