@@ -1074,7 +1074,7 @@ class ClobClient:
         error = resp.get("error")
         if not error:
             return False
-        message = error if isinstance(error, str) else json.dumps(error, ensure_ascii=False)
+        message = error if isinstance(error, str) else json.dumps(error, separators=(",", ":"), ensure_ascii=False)
         return ORDER_VERSION_MISMATCH_ERROR in message
 
     def _retry_on_version_update(self, func):

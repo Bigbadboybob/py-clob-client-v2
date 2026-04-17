@@ -183,7 +183,7 @@ class OpenOrderParams:
 
 @dataclass
 class DropNotificationParams:
-    ids: list = None
+    ids: Optional[list] = None
 
 
 @dataclass
@@ -205,8 +205,8 @@ class OrderBookSummary:
     market: str = None
     asset_id: str = None
     timestamp: str = None
-    bids: list = None
-    asks: list = None
+    bids: Optional[list] = None
+    asks: Optional[list] = None
     min_order_size: str = None
     neg_risk: bool = None
     tick_size: str = None
