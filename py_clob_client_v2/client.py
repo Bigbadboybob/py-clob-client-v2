@@ -244,7 +244,7 @@ class ClobClient:
 
     def post_heartbeat(self, heartbeat_id: str = "") -> dict:
         body = {"heartbeat_id": heartbeat_id}
-        serialized = json.dumps(body, separators=(",", ":"))
+        serialized = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers(
             "POST", POST_HEARTBEAT, body=body, serialized_body=serialized
         )
@@ -823,7 +823,7 @@ class ClobClient:
             if _is_v2_order(order)
             else order_to_json_v1(order, owner, order_type, post_only, defer_exec)
         )
-        serialized = json.dumps(order_payload, separators=(",", ":"))
+        serialized = json.dumps(order_payload, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers(
             "POST", POST_ORDER, body=order_payload, serialized_body=serialized
         )
@@ -852,7 +852,7 @@ class ClobClient:
             )
             orders_payload.append(payload)
 
-        serialized = json.dumps(orders_payload, separators=(",", ":"))
+        serialized = json.dumps(orders_payload, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers(
             "POST", POST_ORDERS, body=orders_payload, serialized_body=serialized
         )
@@ -867,13 +867,13 @@ class ClobClient:
     def cancel_order(self, payload: OrderPayload):
         self.assert_level_2_auth()
         body = {"orderID": payload.orderID}
-        serialized = json.dumps(body, separators=(",", ":"))
+        serialized = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers("DELETE", CANCEL, body=body, serialized_body=serialized)
         return self._delete(f"{self.host}{CANCEL}", headers=headers, data=serialized)
 
     def cancel_orders(self, order_hashes: list):
         self.assert_level_2_auth()
-        serialized = json.dumps(order_hashes, separators=(",", ":"))
+        serialized = json.dumps(order_hashes, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers(
             "DELETE", CANCEL_ORDERS, body=order_hashes, serialized_body=serialized
         )
@@ -891,7 +891,7 @@ class ClobClient:
             body["market"] = payload.market
         if payload.asset_id:
             body["asset_id"] = payload.asset_id
-        serialized = json.dumps(body, separators=(",", ":"))
+        serialized = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers(
             "DELETE", CANCEL_MARKET_ORDERS, body=body, serialized_body=serialized
         )
@@ -908,7 +908,7 @@ class ClobClient:
     def are_orders_scoring(self, params: OrdersScoringParams = None):
         self.assert_level_2_auth()
         order_ids = params.orderIds if params else []
-        serialized = json.dumps(order_ids, separators=(",", ":"))
+        serialized = json.dumps(order_ids, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers(
             "POST", ARE_ORDERS_SCORING, body=order_ids, serialized_body=serialized
         )
@@ -1006,7 +1006,7 @@ class ClobClient:
     def delete_readonly_api_key(self, key: str):
         self.assert_level_2_auth()
         body = {"key": key}
-        serialized = json.dumps(body, separators=(",", ":"))
+        serialized = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
         headers = self._l2_headers("DELETE", DELETE_READONLY_API_KEY, body=body, serialized_body=serialized)
         return self._delete(f"{self.host}{DELETE_READONLY_API_KEY}", headers=headers, data=serialized)
 
@@ -1074,7 +1074,7 @@ class ClobClient:
         error = resp.get("error")
         if not error:
             return False
-        message = error if isinstance(error, str) else json.dumps(error)
+        message = error if isinstance(error, str) else json.dumps(error, ensure_ascii=False)
         return ORDER_VERSION_MISMATCH_ERROR in message
 
     def _retry_on_version_update(self, func):
