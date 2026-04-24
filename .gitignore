@@ -6,3 +6,4 @@ examples/*.txt
 examples/*.json
 
 dist/
+build/
