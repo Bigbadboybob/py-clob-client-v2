@@ -2,6 +2,8 @@ import json
 import logging
 from typing import Optional
 
+import httpx
+
 from .clob_types import (
     ApiCreds,
     BalanceAllowanceParams,
@@ -106,10 +108,12 @@ from .endpoints import (
 from .exceptions import PolyException
 from .headers.headers import create_level_1_headers, create_level_2_headers
 from .http_helpers.helpers import (
+    ClientHelper,
     delete,
     get,
     parse_drop_notification_params,
     post,
+    set_client,
 )
 from .order_builder.builder import OrderBuilder
 from .clob_types import RequestArgs
@@ -143,6 +147,7 @@ class ClobClient:
         builder_config: BuilderConfig = None,
         use_server_time: bool = False,
         retry_on_error: bool = False,
+        httpx_client: "httpx.AsyncClient | None" = None,
     ):
         self.host = host.rstrip("/")
         self.chain_id = chain_id
@@ -171,6 +176,12 @@ class ClobClient:
 
         self.rfq = RfqClient(self)
 
+        # If a caller supplied an httpx.AsyncClient (e.g. a proxy-configured
+        # client), install it as the process-wide ClientHelper so every HTTP
+        # call made through this library uses it.
+        if httpx_client is not None:
+            set_client(ClientHelper(httpx_client))
+
     def _get_client_mode(self) -> int:
         if self.signer is None:
             return L0
@@ -196,11 +207,11 @@ class ClobClient:
         self.creds = creds
         self.mode = self._get_client_mode()
 
-    def _get(self, endpoint: str, headers=None, params: dict = None):
-        return get(endpoint, headers=headers, params=params)
+    async def _get(self, endpoint: str, headers=None, params: dict = None):
+        return await get(endpoint, headers=headers, params=params)
 
-    def _post(self, endpoint: str, headers=None, data=None, params: dict = None):
-        return post(
+    async def _post(self, endpoint: str, headers=None, data=None, params: dict = None):
+        return await post(
             endpoint,
             headers=headers,
             data=data,
@@ -208,24 +219,24 @@ class ClobClient:
             retry_on_error=self.retry_on_error,
         )
 
-    def _delete(self, endpoint: str, headers=None, data=None, params: dict = None):
-        return delete(endpoint, headers=headers, data=data, params=params)
+    async def _delete(self, endpoint: str, headers=None, data=None, params: dict = None):
+        return await delete(endpoint, headers=headers, data=data, params=params)
 
-    def _get_timestamp(self) -> Optional[int]:
+    async def _get_timestamp(self) -> Optional[int]:
         if not self.use_server_time:
             return None
-        result = get(f"{self.host}{TIME}")
+        result = await get(f"{self.host}{TIME}")
         if isinstance(result, dict):
             return result.get("time") or result.get("timestamp")
         return int(result)
 
-    def _l1_headers(self, nonce: int = None) -> dict:
+    async def _l1_headers(self, nonce: int = None) -> dict:
         self.assert_level_1_auth()
         return create_level_1_headers(
-            self.signer, nonce=nonce, timestamp=self._get_timestamp()
+            self.signer, nonce=nonce, timestamp=await self._get_timestamp()
         )
 
-    def _l2_headers(
+    async def _l2_headers(
         self, method: str, endpoint: str, body=None, serialized_body: str = None
     ) -> dict:
         self.assert_level_2_auth()
@@ -236,59 +247,61 @@ class ClobClient:
             serialized_body=serialized_body,
         )
         return create_level_2_headers(
-            self.signer, self.creds, request_args, timestamp=self._get_timestamp()
+            self.signer, self.creds, request_args, timestamp=await self._get_timestamp()
         )
 
-    def get_ok(self):
-        return self._get(f"{self.host}{OK}")
+    async def get_ok(self):
+        return await self._get(f"{self.host}{OK}")
 
-    def post_heartbeat(self, heartbeat_id: str = "") -> dict:
+    async def post_heartbeat(self, heartbeat_id: str = "") -> dict:
         body = {"heartbeat_id": heartbeat_id}
         serialized = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
-        headers = self._l2_headers(
+        headers = await self._l2_headers(
             "POST", POST_HEARTBEAT, body=body, serialized_body=serialized
         )
-        return self._post(f"{self.host}{POST_HEARTBEAT}", headers=headers, data=serialized)
+        return await self._post(
+            f"{self.host}{POST_HEARTBEAT}", headers=headers, data=serialized
+        )
 
-    def get_version(self) -> int:
+    async def get_version(self) -> int:
         try:
-            result = self._get(f"{self.host}{VERSION}")
+            result = await self._get(f"{self.host}{VERSION}")
             return result.get("version", 2) if isinstance(result, dict) else 2
         except Exception:
             return 2
 
-    def get_server_time(self):
-        return self._get(f"{self.host}{TIME}")
+    async def get_server_time(self):
+        return await self._get(f"{self.host}{TIME}")
 
-    def get_sampling_simplified_markets(self, next_cursor: str = INITIAL_CURSOR):
-        return self._get(
+    async def get_sampling_simplified_markets(self, next_cursor: str = INITIAL_CURSOR):
+        return await self._get(
             f"{self.host}{GET_SAMPLING_SIMPLIFIED_MARKETS}",
             params={"next_cursor": next_cursor},
         )
 
-    def get_sampling_markets(self, next_cursor: str = INITIAL_CURSOR):
-        return self._get(
+    async def get_sampling_markets(self, next_cursor: str = INITIAL_CURSOR):
+        return await self._get(
             f"{self.host}{GET_SAMPLING_MARKETS}",
             params={"next_cursor": next_cursor},
         )
 
-    def get_simplified_markets(self, next_cursor: str = INITIAL_CURSOR):
-        return self._get(
+    async def get_simplified_markets(self, next_cursor: str = INITIAL_CURSOR):
+        return await self._get(
             f"{self.host}{GET_SIMPLIFIED_MARKETS}",
             params={"next_cursor": next_cursor},
         )
 
-    def get_markets(self, next_cursor: str = INITIAL_CURSOR):
-        return self._get(
+    async def get_markets(self, next_cursor: str = INITIAL_CURSOR):
+        return await self._get(
             f"{self.host}{GET_MARKETS}",
             params={"next_cursor": next_cursor},
         )
 
-    def get_market(self, condition_id: str):
-        return self._get(f"{self.host}{GET_MARKET}{condition_id}")
+    async def get_market(self, condition_id: str):
+        return await self._get(f"{self.host}{GET_MARKET}{condition_id}")
 
-    def get_clob_market_info(self, condition_id: str) -> dict:
-        result = self._get(f"{self.host}{GET_CLOB_MARKET}{condition_id}")
+    async def get_clob_market_info(self, condition_id: str) -> dict:
+        result = await self._get(f"{self.host}{GET_CLOB_MARKET}{condition_id}")
 
         if not result or not result.get("t"):
             raise PolyException(f"failed to fetch market info for condition id {condition_id}")
@@ -309,92 +322,96 @@ class ClobClient:
 
         return result
 
-    def get_order_book(self, token_id: str):
-        return self._get(
+    async def get_order_book(self, token_id: str):
+        return await self._get(
             f"{self.host}{GET_ORDER_BOOK}", params={"token_id": token_id}
         )
 
-    def get_order_books(self, params: list):
-        return self._post(f"{self.host}{GET_ORDER_BOOKS}", data=params)
+    async def get_order_books(self, params: list):
+        return await self._post(f"{self.host}{GET_ORDER_BOOKS}", data=params)
 
     def get_order_book_hash(self, orderbook: OrderBookSummary) -> str:
         return generate_orderbook_summary_hash(orderbook)
 
-    def get_tick_size(self, token_id: str) -> TickSize:
+    async def get_tick_size(self, token_id: str) -> TickSize:
         if token_id in self.__tick_sizes:
             return self.__tick_sizes[token_id]
 
         if token_id in self.__token_condition_map:
-            self.get_clob_market_info(self.__token_condition_map[token_id])
+            await self.get_clob_market_info(self.__token_condition_map[token_id])
             return self.__tick_sizes[token_id]
 
-        result = self._get(
+        result = await self._get(
             f"{self.host}{GET_TICK_SIZE}", params={"token_id": token_id}
         )
         self.__tick_sizes[token_id] = str(result["minimum_tick_size"])
         return self.__tick_sizes[token_id]
 
-    def get_neg_risk(self, token_id: str) -> bool:
+    async def get_neg_risk(self, token_id: str) -> bool:
         if token_id in self.__neg_risk:
             return self.__neg_risk[token_id]
 
         if token_id in self.__token_condition_map:
-            self.get_clob_market_info(self.__token_condition_map[token_id])
+            await self.get_clob_market_info(self.__token_condition_map[token_id])
             return self.__neg_risk[token_id]
 
-        result = self._get(
+        result = await self._get(
             f"{self.host}{GET_NEG_RISK}", params={"token_id": token_id}
         )
         self.__neg_risk[token_id] = result["neg_risk"]
         return self.__neg_risk[token_id]
 
-    def get_fee_rate_bps(self, token_id: str) -> int:
+    async def get_fee_rate_bps(self, token_id: str) -> int:
         if token_id in self.__fee_rates:
             return self.__fee_rates[token_id]
 
-        result = self._get(
+        result = await self._get(
             f"{self.host}{GET_FEE_RATE}", params={"token_id": token_id}
         )
         self.__fee_rates[token_id] = result.get("base_fee") or 0
         return self.__fee_rates[token_id]
 
-    def get_fee_exponent(self, token_id: str) -> float:
+    async def get_fee_exponent(self, token_id: str) -> float:
         if token_id in self.__fee_infos:
             return self.__fee_infos[token_id].exponent
-        self.__ensure_market_info_cached(token_id)
+        await self.__ensure_market_info_cached(token_id)
         return self.__fee_infos[token_id].exponent
 
-    def get_midpoint(self, token_id: str):
-        return self._get(f"{self.host}{GET_MIDPOINT}", params={"token_id": token_id})
+    async def get_midpoint(self, token_id: str):
+        return await self._get(
+            f"{self.host}{GET_MIDPOINT}", params={"token_id": token_id}
+        )
 
-    def get_midpoints(self, params: list):
-        return self._post(f"{self.host}{GET_MIDPOINTS}", data=params)
+    async def get_midpoints(self, params: list):
+        return await self._post(f"{self.host}{GET_MIDPOINTS}", data=params)
 
-    def get_price(self, token_id: str, side):
+    async def get_price(self, token_id: str, side):
         if isinstance(side, int):
             side = "BUY" if side == Side.BUY else "SELL"
-        return self._get(
+        return await self._get(
             f"{self.host}{GET_PRICE}", params={"token_id": token_id, "side": side}
         )
 
-    def get_prices(self, params: list):
-        return self._post(f"{self.host}{GET_PRICES}", data=params)
+    async def get_prices(self, params: list):
+        return await self._post(f"{self.host}{GET_PRICES}", data=params)
 
-    def get_spread(self, token_id: str):
-        return self._get(f"{self.host}{GET_SPREAD}", params={"token_id": token_id})
+    async def get_spread(self, token_id: str):
+        return await self._get(
+            f"{self.host}{GET_SPREAD}", params={"token_id": token_id}
+        )
 
-    def get_spreads(self, params: list):
-        return self._post(f"{self.host}{GET_SPREADS}", data=params)
+    async def get_spreads(self, params: list):
+        return await self._post(f"{self.host}{GET_SPREADS}", data=params)
 
-    def get_last_trade_price(self, token_id: str):
-        return self._get(
+    async def get_last_trade_price(self, token_id: str):
+        return await self._get(
             f"{self.host}{GET_LAST_TRADE_PRICE}", params={"token_id": token_id}
         )
 
-    def get_last_trades_prices(self, params: list):
-        return self._post(f"{self.host}{GET_LAST_TRADES_PRICES}", data=params)
+    async def get_last_trades_prices(self, params: list):
+        return await self._post(f"{self.host}{GET_LAST_TRADES_PRICES}", data=params)
 
-    def get_prices_history(self, params: PricesHistoryParams):
+    async def get_prices_history(self, params: PricesHistoryParams):
         if params.interval is None and (params.start_ts is None or params.end_ts is None):
             raise ValueError("get_prices_history requires either interval or both start_ts and end_ts")
         p = {}
@@ -408,16 +425,16 @@ class ClobClient:
             p["fidelity"] = params.fidelity
         if params.interval is not None:
             p["interval"] = params.interval
-        return self._get(f"{self.host}{GET_PRICES_HISTORY}", params=p)
+        return await self._get(f"{self.host}{GET_PRICES_HISTORY}", params=p)
 
-    def calculate_market_price(
+    async def calculate_market_price(
         self,
         token_id: str,
         side: str,
         amount: float,
         order_type: OrderType = OrderType.FOK,
     ) -> float:
-        book = self.get_order_book(token_id)
+        book = await self.get_order_book(token_id)
         if not book:
             raise PolyException("no orderbook")
         if side == "BUY" or side == Side.BUY:
@@ -431,11 +448,11 @@ class ClobClient:
                 raise PolyException("no match")
             return self.builder.calculate_sell_market_price(bids, amount, order_type)
 
-    def get_current_rewards(self) -> list:
+    async def get_current_rewards(self) -> list:
         results = []
         next_cursor = INITIAL_CURSOR
         while next_cursor != END_CURSOR:
-            response = self._get(
+            response = await self._get(
                 f"{self.host}{GET_REWARDS_MARKETS_CURRENT}",
                 params={"next_cursor": next_cursor},
             )
@@ -443,11 +460,11 @@ class ClobClient:
             results.extend(response["data"])
         return results
 
-    def get_raw_rewards_for_market(self, condition_id: str) -> list:
+    async def get_raw_rewards_for_market(self, condition_id: str) -> list:
         results = []
         next_cursor = INITIAL_CURSOR
         while next_cursor != END_CURSOR:
-            response = self._get(
+            response = await self._get(
                 f"{self.host}{GET_REWARDS_MARKETS}{condition_id}",
                 params={"next_cursor": next_cursor},
             )
@@ -455,57 +472,57 @@ class ClobClient:
             results.extend(response["data"])
         return results
 
-    def create_api_key(self, nonce: int = None) -> ApiCreds:
-        headers = self._l1_headers(nonce=nonce)
-        resp = self._post(f"{self.host}{CREATE_API_KEY}", headers=headers)
+    async def create_api_key(self, nonce: int = None) -> ApiCreds:
+        headers = await self._l1_headers(nonce=nonce)
+        resp = await self._post(f"{self.host}{CREATE_API_KEY}", headers=headers)
         return ApiCreds(
             api_key=resp["apiKey"],
             api_secret=resp["secret"],
             api_passphrase=resp["passphrase"],
         )
 
-    def derive_api_key(self, nonce: int = None) -> ApiCreds:
-        headers = self._l1_headers(nonce=nonce)
-        resp = self._get(f"{self.host}{DERIVE_API_KEY}", headers=headers)
+    async def derive_api_key(self, nonce: int = None) -> ApiCreds:
+        headers = await self._l1_headers(nonce=nonce)
+        resp = await self._get(f"{self.host}{DERIVE_API_KEY}", headers=headers)
         return ApiCreds(
             api_key=resp["apiKey"],
             api_secret=resp["secret"],
             api_passphrase=resp["passphrase"],
         )
 
-    def create_or_derive_api_key(self, nonce: int = None) -> ApiCreds:
+    async def create_or_derive_api_key(self, nonce: int = None) -> ApiCreds:
         try:
-            resp = self.create_api_key(nonce=nonce)
+            resp = await self.create_api_key(nonce=nonce)
             if resp.api_key:
                 return resp
         except Exception:
             pass
-        return self.derive_api_key(nonce=nonce)
+        return await self.derive_api_key(nonce=nonce)
 
-    def get_api_keys(self):
-        headers = self._l2_headers("GET", GET_API_KEYS)
-        return self._get(f"{self.host}{GET_API_KEYS}", headers=headers)
+    async def get_api_keys(self):
+        headers = await self._l2_headers("GET", GET_API_KEYS)
+        return await self._get(f"{self.host}{GET_API_KEYS}", headers=headers)
 
-    def get_closed_only_mode(self):
-        headers = self._l2_headers("GET", CLOSED_ONLY)
-        return self._get(f"{self.host}{CLOSED_ONLY}", headers=headers)
+    async def get_closed_only_mode(self):
+        headers = await self._l2_headers("GET", CLOSED_ONLY)
+        return await self._get(f"{self.host}{CLOSED_ONLY}", headers=headers)
 
-    def delete_api_key(self):
-        headers = self._l2_headers("DELETE", DELETE_API_KEY)
-        return self._delete(f"{self.host}{DELETE_API_KEY}", headers=headers)
+    async def delete_api_key(self):
+        headers = await self._l2_headers("DELETE", DELETE_API_KEY)
+        return await self._delete(f"{self.host}{DELETE_API_KEY}", headers=headers)
 
-    def get_order(self, order_id: str):
+    async def get_order(self, order_id: str):
         endpoint = f"{GET_ORDER}{order_id}"
-        headers = self._l2_headers("GET", endpoint)
-        return self._get(f"{self.host}{endpoint}", headers=headers)
+        headers = await self._l2_headers("GET", endpoint)
+        return await self._get(f"{self.host}{endpoint}", headers=headers)
 
-    def get_open_orders(
+    async def get_open_orders(
         self,
         params: OpenOrderParams = None,
         only_first_page: bool = False,
         next_cursor: str = None,
     ) -> list:
-        headers = self._l2_headers("GET", ORDERS)
+        headers = await self._l2_headers("GET", ORDERS)
         results = []
         cursor = next_cursor or INITIAL_CURSOR
         first = True
@@ -520,35 +537,37 @@ class ClobClient:
                 if params.id:
                     p["id"] = params.id
             p["next_cursor"] = cursor
-            response = self._get(f"{self.host}{ORDERS}", headers=headers, params=p)
+            response = await self._get(f"{self.host}{ORDERS}", headers=headers, params=p)
             cursor = response["next_cursor"]
             results.extend(response["data"])
         return results
 
-    def get_pre_migration_orders(
+    async def get_pre_migration_orders(
         self,
         only_first_page: bool = False,
         next_cursor: str = None,
     ) -> list:
-        headers = self._l2_headers("GET", PRE_MIGRATION_ORDERS)
+        headers = await self._l2_headers("GET", PRE_MIGRATION_ORDERS)
         results = []
         cursor = next_cursor or INITIAL_CURSOR
         first = True
         while cursor != END_CURSOR and (first or not only_first_page):
             first = False
             p = {"next_cursor": cursor}
-            response = self._get(f"{self.host}{PRE_MIGRATION_ORDERS}", headers=headers, params=p)
+            response = await self._get(
+                f"{self.host}{PRE_MIGRATION_ORDERS}", headers=headers, params=p
+            )
             cursor = response["next_cursor"]
             results.extend(response["data"])
         return results
 
-    def get_trades(
+    async def get_trades(
         self,
         params: TradeParams = None,
         only_first_page: bool = False,
         next_cursor: str = None,
     ) -> list:
-        headers = self._l2_headers("GET", TRADES)
+        headers = await self._l2_headers("GET", TRADES)
         results = []
         cursor = next_cursor or INITIAL_CURSOR
         first = True
@@ -569,17 +588,17 @@ class ClobClient:
                 if params.id:
                     p["id"] = params.id
             p["next_cursor"] = cursor
-            response = self._get(f"{self.host}{TRADES}", headers=headers, params=p)
+            response = await self._get(f"{self.host}{TRADES}", headers=headers, params=p)
             cursor = response["next_cursor"]
             results.extend(response["data"])
         return results
 
-    def get_trades_paginated(
+    async def get_trades_paginated(
         self,
         params: TradeParams = None,
         next_cursor: str = None,
     ) -> dict:
-        headers = self._l2_headers("GET", TRADES)
+        headers = await self._l2_headers("GET", TRADES)
         cursor = next_cursor or INITIAL_CURSOR
         p = {}
         if params:
@@ -596,7 +615,7 @@ class ClobClient:
             if params.id:
                 p["id"] = params.id
         p["next_cursor"] = cursor
-        response = self._get(f"{self.host}{TRADES}", headers=headers, params=p)
+        response = await self._get(f"{self.host}{TRADES}", headers=headers, params=p)
         data = response.get("data", [])
         return {
             "trades": list(data) if data else [],
@@ -605,14 +624,14 @@ class ClobClient:
             "count": response.get("count"),
         }
 
-    def get_builder_trades(
+    async def get_builder_trades(
         self,
         params: BuilderTradeParams,
         next_cursor: str = None,
     ) -> dict:
         if not params.builder_code or params.builder_code == BYTES32_ZERO:
             raise PolyException("builder_code is required and cannot be zero")
-        headers = self._l2_headers("GET", GET_BUILDER_TRADES)
+        headers = await self._l2_headers("GET", GET_BUILDER_TRADES)
         cursor = next_cursor or INITIAL_CURSOR
         p = {"builder_code": params.builder_code}
         if params.id:
@@ -628,7 +647,9 @@ class ClobClient:
         if params.after:
             p["after"] = params.after
         p["next_cursor"] = cursor
-        response = self._get(f"{self.host}{GET_BUILDER_TRADES}", headers=headers, params=p)
+        response = await self._get(
+            f"{self.host}{GET_BUILDER_TRADES}", headers=headers, params=p
+        )
         data = response.get("data", [])
         return {
             "trades": list(data) if data else [],
@@ -637,43 +658,47 @@ class ClobClient:
             "count": response.get("count"),
         }
 
-    def get_notifications(self):
-        headers = self._l2_headers("GET", GET_NOTIFICATIONS)
-        return self._get(
+    async def get_notifications(self):
+        headers = await self._l2_headers("GET", GET_NOTIFICATIONS)
+        return await self._get(
             f"{self.host}{GET_NOTIFICATIONS}",
             headers=headers,
             params={"signature_type": int(self.builder.signature_type)},
         )
 
-    def drop_notifications(self, params: DropNotificationParams = None):
-        headers = self._l2_headers("DELETE", GET_NOTIFICATIONS)
-        return self._delete(
+    async def drop_notifications(self, params: DropNotificationParams = None):
+        headers = await self._l2_headers("DELETE", GET_NOTIFICATIONS)
+        return await self._delete(
             f"{self.host}{GET_NOTIFICATIONS}",
             headers=headers,
             params=parse_drop_notification_params(params),
         )
 
-    def get_balance_allowance(self, params: BalanceAllowanceParams = None):
-        headers = self._l2_headers("GET", GET_BALANCE_ALLOWANCE)
+    async def get_balance_allowance(self, params: BalanceAllowanceParams = None):
+        headers = await self._l2_headers("GET", GET_BALANCE_ALLOWANCE)
         p = {"signature_type": int(self.builder.signature_type)}
         if params:
             if params.asset_type:
                 p["asset_type"] = str(params.asset_type)
             if params.token_id:
                 p["token_id"] = params.token_id
-        return self._get(f"{self.host}{GET_BALANCE_ALLOWANCE}", headers=headers, params=p)
+        return await self._get(
+            f"{self.host}{GET_BALANCE_ALLOWANCE}", headers=headers, params=p
+        )
 
-    def update_balance_allowance(self, params: BalanceAllowanceParams = None):
-        headers = self._l2_headers("GET", UPDATE_BALANCE_ALLOWANCE)
+    async def update_balance_allowance(self, params: BalanceAllowanceParams = None):
+        headers = await self._l2_headers("GET", UPDATE_BALANCE_ALLOWANCE)
         p = {"signature_type": int(self.builder.signature_type)}
         if params:
             if params.asset_type:
                 p["asset_type"] = str(params.asset_type)
             if params.token_id:
                 p["token_id"] = params.token_id
-        return self._get(f"{self.host}{UPDATE_BALANCE_ALLOWANCE}", headers=headers, params=p)
+        return await self._get(
+            f"{self.host}{UPDATE_BALANCE_ALLOWANCE}", headers=headers, params=p
+        )
 
-    def create_order(
+    async def create_order(
         self,
         order_args: OrderArgsV2,
         options: PartialCreateOrderOptions = None,
@@ -686,7 +711,7 @@ class ClobClient:
 
         token_id = order_args.token_id
 
-        tick_size = self.__resolve_tick_size(
+        tick_size = await self.__resolve_tick_size(
             token_id, options.tick_size if options else None
         )
 
@@ -699,12 +724,16 @@ class ClobClient:
         neg_risk = (
             options.neg_risk
             if (options and options.neg_risk is not None)
-            else self.get_neg_risk(token_id)
+            else await self.get_neg_risk(token_id)
         )
-        version = self.__resolve_version()
+        version = await self.__resolve_version()
 
         user_fee_rate_bps = getattr(order_args, "fee_rate_bps", None) or None
-        fee_rate_bps = self.__resolve_fee_rate_bps(token_id, user_fee_rate_bps) if version == 1 else None
+        fee_rate_bps = (
+            await self.__resolve_fee_rate_bps(token_id, user_fee_rate_bps)
+            if version == 1
+            else None
+        )
 
         return self.builder.build_order(
             order_args,
@@ -713,7 +742,7 @@ class ClobClient:
             fee_rate_bps=fee_rate_bps,
         )
 
-    def create_market_order(
+    async def create_market_order(
         self,
         order_args: MarketOrderArgsV2,
         options: PartialCreateOrderOptions = None,
@@ -721,14 +750,14 @@ class ClobClient:
         self.assert_level_1_auth()
 
         token_id = order_args.token_id
-        self.__ensure_market_info_cached(token_id)
+        await self.__ensure_market_info_cached(token_id)
 
-        tick_size = self.__resolve_tick_size(
+        tick_size = await self.__resolve_tick_size(
             token_id, options.tick_size if options else None
         )
 
         if not order_args.price:
-            order_args.price = self.calculate_market_price(
+            order_args.price = await self.calculate_market_price(
                 token_id,
                 order_args.side,
                 order_args.amount,
@@ -748,7 +777,7 @@ class ClobClient:
         builder_code = getattr(order_args, "builder_code", BYTES32_ZERO)
 
         if (order_args.side == "BUY" or order_args.side == Side.BUY) and getattr(order_args, "user_usdc_balance", None):
-            self.__ensure_builder_fee_rate_cached(builder_code)
+            await self.__ensure_builder_fee_rate_cached(builder_code)
             builder_taker_fee_rate = (
                 self.__builder_fee_rates[builder_code].taker
                 if builder_code and builder_code != BYTES32_ZERO and builder_code in self.__builder_fee_rates
@@ -767,12 +796,16 @@ class ClobClient:
         neg_risk = (
             options.neg_risk
             if (options and options.neg_risk is not None)
-            else self.get_neg_risk(token_id)
+            else await self.get_neg_risk(token_id)
         )
-        version = self.__resolve_version()
+        version = await self.__resolve_version()
 
         user_fee_rate_bps = getattr(order_args, "fee_rate_bps", None) or None
-        fee_rate_bps = self.__resolve_fee_rate_bps(token_id, user_fee_rate_bps) if version == 1 else None
+        fee_rate_bps = (
+            await self.__resolve_fee_rate_bps(token_id, user_fee_rate_bps)
+            if version == 1
+            else None
+        )
 
         return self.builder.build_market_order(
             order_args,
@@ -781,7 +814,7 @@ class ClobClient:
             fee_rate_bps=fee_rate_bps,
         )
 
-    def create_and_post_order(
+    async def create_and_post_order(
         self,
         order_args: OrderArgsV2,
         options: PartialCreateOrderOptions = None,
@@ -789,26 +822,26 @@ class ClobClient:
         post_only: bool = False,
         defer_exec: bool = False,
     ):
-        return self._retry_on_version_update(
-            lambda: self.post_order(
-                self.create_order(order_args, options), order_type, post_only, defer_exec
-            )
-        )
+        async def _run():
+            order = await self.create_order(order_args, options)
+            return await self.post_order(order, order_type, post_only, defer_exec)
 
-    def create_and_post_market_order(
+        return await self._retry_on_version_update(_run)
+
+    async def create_and_post_market_order(
         self,
         order_args: MarketOrderArgsV2,
         options: PartialCreateOrderOptions = None,
         order_type: OrderType = OrderType.FOK,
         defer_exec: bool = False,
     ):
-        return self._retry_on_version_update(
-            lambda: self.post_order(
-                self.create_market_order(order_args, options), order_type, False, defer_exec
-            )
-        )
+        async def _run():
+            order = await self.create_market_order(order_args, options)
+            return await self.post_order(order, order_type, False, defer_exec)
 
-    def post_order(
+        return await self._retry_on_version_update(_run)
+
+    async def post_order(
         self,
         order,
         order_type: OrderType = OrderType.GTC,
@@ -826,18 +859,18 @@ class ClobClient:
             else order_to_json_v1(order, owner, order_type, post_only, defer_exec)
         )
         serialized = json.dumps(order_payload, separators=(",", ":"), ensure_ascii=False)
-        headers = self._l2_headers(
+        headers = await self._l2_headers(
             "POST", POST_ORDER, body=order_payload, serialized_body=serialized
         )
 
-        res = self._post(f"{self.host}{POST_ORDER}", headers=headers, data=serialized)
+        res = await self._post(f"{self.host}{POST_ORDER}", headers=headers, data=serialized)
 
         if self._is_order_version_mismatch(res):
-            self.__resolve_version(force_update=True)
+            await self.__resolve_version(force_update=True)
 
         return res
 
-    def post_orders(self, args: list, post_only: bool = False, defer_exec: bool = False):
+    async def post_orders(self, args: list, post_only: bool = False, defer_exec: bool = False):
         self.assert_level_2_auth()
         if post_only and any(arg.orderType in (OrderType.FOK, OrderType.FAK) for arg in args):
             raise ValueError("post_only is not supported for FOK/FAK orders")
@@ -855,38 +888,42 @@ class ClobClient:
             orders_payload.append(payload)
 
         serialized = json.dumps(orders_payload, separators=(",", ":"), ensure_ascii=False)
-        headers = self._l2_headers(
+        headers = await self._l2_headers(
             "POST", POST_ORDERS, body=orders_payload, serialized_body=serialized
         )
 
-        res = self._post(f"{self.host}{POST_ORDERS}", headers=headers, data=serialized)
+        res = await self._post(f"{self.host}{POST_ORDERS}", headers=headers, data=serialized)
 
         if self._is_order_version_mismatch(res):
-            self.__resolve_version(force_update=True)
+            await self.__resolve_version(force_update=True)
 
         return res
 
-    def cancel_order(self, payload: OrderPayload):
+    async def cancel_order(self, payload: OrderPayload):
         self.assert_level_2_auth()
         body = {"orderID": payload.orderID}
         serialized = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
-        headers = self._l2_headers("DELETE", CANCEL, body=body, serialized_body=serialized)
-        return self._delete(f"{self.host}{CANCEL}", headers=headers, data=serialized)
+        headers = await self._l2_headers(
+            "DELETE", CANCEL, body=body, serialized_body=serialized
+        )
+        return await self._delete(f"{self.host}{CANCEL}", headers=headers, data=serialized)
 
-    def cancel_orders(self, order_hashes: list):
+    async def cancel_orders(self, order_hashes: list):
         self.assert_level_2_auth()
         serialized = json.dumps(order_hashes, separators=(",", ":"), ensure_ascii=False)
-        headers = self._l2_headers(
+        headers = await self._l2_headers(
             "DELETE", CANCEL_ORDERS, body=order_hashes, serialized_body=serialized
         )
-        return self._delete(f"{self.host}{CANCEL_ORDERS}", headers=headers, data=serialized)
+        return await self._delete(
+            f"{self.host}{CANCEL_ORDERS}", headers=headers, data=serialized
+        )
 
-    def cancel_all(self):
+    async def cancel_all(self):
         self.assert_level_2_auth()
-        headers = self._l2_headers("DELETE", CANCEL_ALL)
-        return self._delete(f"{self.host}{CANCEL_ALL}", headers=headers)
+        headers = await self._l2_headers("DELETE", CANCEL_ALL)
+        return await self._delete(f"{self.host}{CANCEL_ALL}", headers=headers)
 
-    def cancel_market_orders(self, payload: OrderMarketCancelParams):
+    async def cancel_market_orders(self, payload: OrderMarketCancelParams):
         self.assert_level_2_auth()
         body = {}
         if payload.market:
@@ -894,31 +931,37 @@ class ClobClient:
         if payload.asset_id:
             body["asset_id"] = payload.asset_id
         serialized = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
-        headers = self._l2_headers(
+        headers = await self._l2_headers(
             "DELETE", CANCEL_MARKET_ORDERS, body=body, serialized_body=serialized
         )
-        return self._delete(f"{self.host}{CANCEL_MARKET_ORDERS}", headers=headers, data=serialized)
+        return await self._delete(
+            f"{self.host}{CANCEL_MARKET_ORDERS}", headers=headers, data=serialized
+        )
 
-    def is_order_scoring(self, params: OrderScoringParams = None):
+    async def is_order_scoring(self, params: OrderScoringParams = None):
         self.assert_level_2_auth()
-        headers = self._l2_headers("GET", IS_ORDER_SCORING)
+        headers = await self._l2_headers("GET", IS_ORDER_SCORING)
         p = {}
         if params and params.orderId:
             p["order_id"] = params.orderId
-        return self._get(f"{self.host}{IS_ORDER_SCORING}", headers=headers, params=p or None)
+        return await self._get(
+            f"{self.host}{IS_ORDER_SCORING}", headers=headers, params=p or None
+        )
 
-    def are_orders_scoring(self, params: OrdersScoringParams = None):
+    async def are_orders_scoring(self, params: OrdersScoringParams = None):
         self.assert_level_2_auth()
         order_ids = params.orderIds if params else []
         serialized = json.dumps(order_ids, separators=(",", ":"), ensure_ascii=False)
-        headers = self._l2_headers(
+        headers = await self._l2_headers(
             "POST", ARE_ORDERS_SCORING, body=order_ids, serialized_body=serialized
         )
-        return self._post(f"{self.host}{ARE_ORDERS_SCORING}", headers=headers, data=serialized)
+        return await self._post(
+            f"{self.host}{ARE_ORDERS_SCORING}", headers=headers, data=serialized
+        )
 
-    def get_earnings_for_user_for_day(self, date: str) -> list:
+    async def get_earnings_for_user_for_day(self, date: str) -> list:
         self.assert_level_2_auth()
-        headers = self._l2_headers("GET", GET_EARNINGS_FOR_USER_FOR_DAY)
+        headers = await self._l2_headers("GET", GET_EARNINGS_FOR_USER_FOR_DAY)
         results = []
         next_cursor = INITIAL_CURSOR
         while next_cursor != END_CURSOR:
@@ -927,25 +970,27 @@ class ClobClient:
                 "signature_type": int(self.builder.signature_type),
                 "next_cursor": next_cursor,
             }
-            response = self._get(
+            response = await self._get(
                 f"{self.host}{GET_EARNINGS_FOR_USER_FOR_DAY}", headers=headers, params=p
             )
             next_cursor = response["next_cursor"]
             results.extend(response["data"])
         return results
 
-    def get_total_earnings_for_user_for_day(self, date: str):
+    async def get_total_earnings_for_user_for_day(self, date: str):
         self.assert_level_2_auth()
-        headers = self._l2_headers("GET", GET_TOTAL_EARNINGS_FOR_USER_FOR_DAY)
+        headers = await self._l2_headers("GET", GET_TOTAL_EARNINGS_FOR_USER_FOR_DAY)
         p = {
             "date": date,
             "signature_type": int(self.builder.signature_type),
         }
-        return self._get(
-            f"{self.host}{GET_TOTAL_EARNINGS_FOR_USER_FOR_DAY}", headers=headers, params=p
+        return await self._get(
+            f"{self.host}{GET_TOTAL_EARNINGS_FOR_USER_FOR_DAY}",
+            headers=headers,
+            params=p,
         )
 
-    def get_user_earnings_and_markets_config(
+    async def get_user_earnings_and_markets_config(
         self,
         date: str,
         order_by: str = "",
@@ -953,7 +998,7 @@ class ClobClient:
         no_competition: bool = False,
     ) -> list:
         self.assert_level_2_auth()
-        headers = self._l2_headers("GET", GET_REWARDS_EARNINGS_PERCENTAGES)
+        headers = await self._l2_headers("GET", GET_REWARDS_EARNINGS_PERCENTAGES)
         results = []
         next_cursor = INITIAL_CURSOR
         while next_cursor != END_CURSOR:
@@ -965,58 +1010,72 @@ class ClobClient:
                 "position": position,
                 "no_competition": no_competition,
             }
-            response = self._get(
-                f"{self.host}{GET_REWARDS_EARNINGS_PERCENTAGES}", headers=headers, params=p
+            response = await self._get(
+                f"{self.host}{GET_REWARDS_EARNINGS_PERCENTAGES}",
+                headers=headers,
+                params=p,
             )
             next_cursor = response["next_cursor"]
             results.extend(response["data"])
         return results
 
-    def get_reward_percentages(self):
+    async def get_reward_percentages(self):
         self.assert_level_2_auth()
-        headers = self._l2_headers("GET", GET_LIQUIDITY_REWARD_PERCENTAGES)
+        headers = await self._l2_headers("GET", GET_LIQUIDITY_REWARD_PERCENTAGES)
         p = {"signature_type": int(self.builder.signature_type)}
-        return self._get(
+        return await self._get(
             f"{self.host}{GET_LIQUIDITY_REWARD_PERCENTAGES}", headers=headers, params=p
         )
 
-    def create_builder_api_key(self):
+    async def create_builder_api_key(self):
         self.assert_level_2_auth()
-        headers = self._l2_headers("POST", CREATE_BUILDER_API_KEY)
-        return self._post(f"{self.host}{CREATE_BUILDER_API_KEY}", headers=headers)
+        headers = await self._l2_headers("POST", CREATE_BUILDER_API_KEY)
+        return await self._post(f"{self.host}{CREATE_BUILDER_API_KEY}", headers=headers)
 
-    def get_builder_api_keys(self):
+    async def get_builder_api_keys(self):
         self.assert_level_2_auth()
-        headers = self._l2_headers("GET", GET_BUILDER_API_KEYS)
-        return self._get(f"{self.host}{GET_BUILDER_API_KEYS}", headers=headers)
+        headers = await self._l2_headers("GET", GET_BUILDER_API_KEYS)
+        return await self._get(f"{self.host}{GET_BUILDER_API_KEYS}", headers=headers)
 
-    def revoke_builder_api_key(self):
+    async def revoke_builder_api_key(self):
         self.assert_level_2_auth()
-        headers = self._l2_headers("DELETE", REVOKE_BUILDER_API_KEY)
-        return self._delete(f"{self.host}{REVOKE_BUILDER_API_KEY}", headers=headers)
+        headers = await self._l2_headers("DELETE", REVOKE_BUILDER_API_KEY)
+        return await self._delete(
+            f"{self.host}{REVOKE_BUILDER_API_KEY}", headers=headers
+        )
 
-    def create_readonly_api_key(self):
+    async def create_readonly_api_key(self):
         self.assert_level_2_auth()
-        headers = self._l2_headers("POST", CREATE_READONLY_API_KEY)
-        return self._post(f"{self.host}{CREATE_READONLY_API_KEY}", headers=headers)
+        headers = await self._l2_headers("POST", CREATE_READONLY_API_KEY)
+        return await self._post(
+            f"{self.host}{CREATE_READONLY_API_KEY}", headers=headers
+        )
 
-    def get_readonly_api_keys(self):
+    async def get_readonly_api_keys(self):
         self.assert_level_2_auth()
-        headers = self._l2_headers("GET", GET_READONLY_API_KEYS)
-        return self._get(f"{self.host}{GET_READONLY_API_KEYS}", headers=headers)
+        headers = await self._l2_headers("GET", GET_READONLY_API_KEYS)
+        return await self._get(
+            f"{self.host}{GET_READONLY_API_KEYS}", headers=headers
+        )
 
-    def delete_readonly_api_key(self, key: str):
+    async def delete_readonly_api_key(self, key: str):
         self.assert_level_2_auth()
         body = {"key": key}
         serialized = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
-        headers = self._l2_headers("DELETE", DELETE_READONLY_API_KEY, body=body, serialized_body=serialized)
-        return self._delete(f"{self.host}{DELETE_READONLY_API_KEY}", headers=headers, data=serialized)
+        headers = await self._l2_headers(
+            "DELETE", DELETE_READONLY_API_KEY, body=body, serialized_body=serialized
+        )
+        return await self._delete(
+            f"{self.host}{DELETE_READONLY_API_KEY}", headers=headers, data=serialized
+        )
 
-    def get_market_trades_events(self, condition_id: str):
-        return self._get(f"{self.host}{GET_MARKET_TRADES_EVENTS}{condition_id}")
+    async def get_market_trades_events(self, condition_id: str):
+        return await self._get(f"{self.host}{GET_MARKET_TRADES_EVENTS}{condition_id}")
 
-    def __resolve_tick_size(self, token_id: str, tick_size: TickSize = None) -> TickSize:
-        min_tick_size = self.get_tick_size(token_id)
+    async def __resolve_tick_size(
+        self, token_id: str, tick_size: TickSize = None
+    ) -> TickSize:
+        min_tick_size = await self.get_tick_size(token_id)
         if tick_size:
             if is_tick_size_smaller(tick_size, min_tick_size):
                 raise PolyException(
@@ -1025,8 +1084,10 @@ class ClobClient:
             return tick_size
         return min_tick_size
 
-    def __resolve_fee_rate_bps(self, token_id: str, user_fee_rate_bps: int = None) -> int:
-        market_fee_rate_bps = self.get_fee_rate_bps(token_id)
+    async def __resolve_fee_rate_bps(
+        self, token_id: str, user_fee_rate_bps: int = None
+    ) -> int:
+        market_fee_rate_bps = await self.get_fee_rate_bps(token_id)
         if (
             market_fee_rate_bps > 0
             and user_fee_rate_bps is not None
@@ -1038,37 +1099,42 @@ class ClobClient:
             )
         return market_fee_rate_bps
 
-    def __resolve_version(self, force_update: bool = False) -> int:
+    async def __resolve_version(self, force_update: bool = False) -> int:
         if not force_update and self.__cached_version is not None:
             return self.__cached_version
-        self.__cached_version = self.get_version()
+        self.__cached_version = await self.get_version()
         return self.__cached_version
 
-    def __ensure_builder_fee_rate_cached(self, builder_code: str):
+    async def __ensure_builder_fee_rate_cached(self, builder_code: str):
         if not builder_code or builder_code == BYTES32_ZERO:
             return
         if builder_code in self.__builder_fee_rates:
             return
         try:
-            result = self._get(f"{self.host}{GET_BUILDER_FEE_RATE}{builder_code}")
+            result = await self._get(f"{self.host}{GET_BUILDER_FEE_RATE}{builder_code}")
             self.__builder_fee_rates[builder_code] = BuilderFeeRate(
                 maker=result.get("builder_maker_fee_rate_bps", 0) / BUILDER_FEES_BPS,
                 taker=result.get("builder_taker_fee_rate_bps", 0) / BUILDER_FEES_BPS,
             )
         except Exception:
-            logging.warning("failed to fetch builder fee rate for %s, will retry on next order", builder_code)
+            logging.warning(
+                "failed to fetch builder fee rate for %s, will retry on next order",
+                builder_code,
+            )
 
-    def __ensure_market_info_cached(self, token_id: str):
+    async def __ensure_market_info_cached(self, token_id: str):
         if token_id in self.__fee_infos:
             return
 
         if token_id not in self.__token_condition_map:
-            result = self._get(f"{self.host}{GET_MARKET_BY_TOKEN}{token_id}")
+            result = await self._get(f"{self.host}{GET_MARKET_BY_TOKEN}{token_id}")
             if not result or not result.get("condition_id"):
-                raise PolyException(f"failed to resolve condition id for token {token_id}")
+                raise PolyException(
+                    f"failed to resolve condition id for token {token_id}"
+                )
             self.__token_condition_map[token_id] = result["condition_id"]
 
-        self.get_clob_market_info(self.__token_condition_map[token_id])
+        await self.get_clob_market_info(self.__token_condition_map[token_id])
 
     def _is_order_version_mismatch(self, resp) -> bool:
         if not isinstance(resp, dict):
@@ -1076,14 +1142,18 @@ class ClobClient:
         error = resp.get("error")
         if not error:
             return False
-        message = error if isinstance(error, str) else json.dumps(error, separators=(",", ":"), ensure_ascii=False)
+        message = (
+            error
+            if isinstance(error, str)
+            else json.dumps(error, separators=(",", ":"), ensure_ascii=False)
+        )
         return ORDER_VERSION_MISMATCH_ERROR in message
 
-    def _retry_on_version_update(self, func):
-        version = self.__resolve_version()
+    async def _retry_on_version_update(self, func):
+        version = await self.__resolve_version()
         result = None
         for _ in range(2):
-            result = func()
-            if version == self.__resolve_version():
+            result = await func()
+            if version == await self.__resolve_version():
                 break
         return result

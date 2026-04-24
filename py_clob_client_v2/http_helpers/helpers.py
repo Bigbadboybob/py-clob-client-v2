@@ -1,5 +1,6 @@
+import asyncio
 import logging
-import time
+import traceback
 
 import httpx
 
@@ -20,7 +21,6 @@ POST = "POST"
 DELETE = "DELETE"
 PUT = "PUT"
 
-_http_client = httpx.Client(http2=True)
 
 def _overload_headers(method: str, headers: dict) -> dict:
     if headers is None:
@@ -32,6 +32,7 @@ def _overload_headers(method: str, headers: dict) -> dict:
     if method == GET:
         headers["Accept-Encoding"] = "gzip"
     return headers
+
 
 def _is_transient_error(exc: Exception, status_code: int = None) -> bool:
     """
@@ -47,72 +48,166 @@ def _is_transient_error(exc: Exception, status_code: int = None) -> bool:
         (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError),
     )
 
-def request(endpoint: str, method: str, headers=None, data=None, params=None):
-    headers = _overload_headers(method, headers)
-    try:
-        if isinstance(data, str):
-            resp = _http_client.request(
-                method=method,
-                url=endpoint,
-                headers=headers,
-                content=data.encode("utf-8"),
-                params=params,
-            )
-        else:
-            resp = _http_client.request(
-                method=method,
-                url=endpoint,
-                headers=headers,
-                json=data,
-                params=params,
-            )
 
-        if resp.status_code != 200:
-            # resp.text is the server response body (no credentials are logged here)
-            logger.error(
-                "[py_clob_client_v2] request error status=%s url=%s body=%s",
-                resp.status_code,
-                endpoint,
-                resp.text,
-            )
-            raise PolyApiException(resp)
+class ClientHelper:
+    """
+    Helper class that wraps an injected httpx.AsyncClient and issues async
+    HTTP requests.  Every coroutine method returns either parsed JSON (when
+    the server sends JSON content) or the raw text body.
+    """
 
+    def __init__(self, client: httpx.AsyncClient):
+        self.client = client
+
+    async def request(
+        self,
+        endpoint: str,
+        method: str,
+        headers=None,
+        data=None,
+        params=None,
+    ):
+        headers = _overload_headers(method, headers)
         try:
-            return resp.json()
-        except ValueError:
-            return resp.text
+            if isinstance(data, str):
+                # Pre-serialized body: send exact bytes
+                resp = await self.client.request(
+                    method=method,
+                    url=endpoint,
+                    headers=headers,
+                    content=data.encode("utf-8"),
+                    params=params,
+                )
+            else:
+                resp = await self.client.request(
+                    method=method,
+                    url=endpoint,
+                    headers=headers,
+                    json=data,
+                    params=params,
+                )
 
-    except PolyApiException:
-        raise
-    except httpx.RequestError as exc:
-        logger.error("[py_clob_client_v2] request error: %s", exc)
-        raise PolyApiException(error_msg="Request exception!")
+            if resp.status_code != 200:
+                # resp.text is the server response body (no credentials are logged here)
+                logger.error(
+                    "[py_clob_client_v2] request error status=%s url=%s body=%s",
+                    resp.status_code,
+                    endpoint,
+                    resp.text,
+                )
+                raise PolyApiException(resp)
 
-def get(endpoint, headers=None, data=None, params=None):
-    return request(endpoint, GET, headers, data, params)
+            # Check content type header to see if it's JSON
+            content_type = resp.headers.get("content-type", "")
 
-def post(endpoint, headers=None, data=None, params=None, retry_on_error: bool = False):
+            if not resp.content or len(resp.content.strip()) == 0:
+                return {}
+            if "application/json" in content_type:
+                return resp.json()
+            # Some endpoints still return JSON without the header; try anyway
+            try:
+                return resp.json()
+            except ValueError:
+                return resp.text
+
+        except PolyApiException:
+            raise
+        except httpx.RequestError as exc:
+            logger.error("[py_clob_client_v2] request error: %s", exc)
+            traceback.print_exc()
+            raise PolyApiException(
+                error_msg=f"{exc.__class__.__name__}: {repr(exc)}"
+            ) from exc
+
+    async def get(self, endpoint, headers=None, data=None, params=None):
+        return await self.request(endpoint, GET, headers, data, params)
+
+    async def post(self, endpoint, headers=None, data=None, params=None):
+        return await self.request(endpoint, POST, headers, data, params)
+
+    async def delete(self, endpoint, headers=None, data=None, params=None):
+        return await self.request(endpoint, DELETE, headers, data, params)
+
+    async def put(self, endpoint, headers=None, data=None, params=None):
+        return await self.request(endpoint, PUT, headers, data, params)
+
+
+_client_helper: "ClientHelper | None" = None
+
+
+def get_client() -> ClientHelper:
+    """
+    Returns the process-wide ClientHelper.  Lazily instantiated with a default
+    httpx.AsyncClient() when no client has been injected.
+    """
+    global _client_helper
+    if _client_helper is None:
+        _client_helper = ClientHelper(httpx.AsyncClient(http2=True))
+    return _client_helper
+
+
+def set_client(client_helper: ClientHelper) -> None:
+    """Inject a ClientHelper to be used by module-level helpers / ClobClient."""
+    global _client_helper
+    _client_helper = client_helper
+
+
+# ---------------------------------------------------------------------------
+# Module-level async helpers (backward-compat surface).  These delegate to the
+# shared ClientHelper so that a single AsyncClient (with its connection pool)
+# is reused across the whole process.
+# ---------------------------------------------------------------------------
+
+async def request(endpoint, method, headers=None, data=None, params=None):
+    return await get_client().request(
+        endpoint, method, headers=headers, data=data, params=params
+    )
+
+
+async def get(endpoint, headers=None, data=None, params=None):
+    return await get_client().get(endpoint, headers=headers, data=data, params=params)
+
+
+async def post(
+    endpoint,
+    headers=None,
+    data=None,
+    params=None,
+    retry_on_error: bool = False,
+):
     try:
-        return request(endpoint, POST, headers, data, params)
-    except (PolyApiException, Exception) as exc:
+        return await get_client().post(
+            endpoint, headers=headers, data=data, params=params
+        )
+    except Exception as exc:
         status = getattr(exc, "status_code", None)
         if retry_on_error and _is_transient_error(exc, status):
             logger.info("[py_clob_client_v2] transient error, retrying once after 30 ms")
-            time.sleep(0.03)
-            return request(endpoint, POST, headers, data, params)
+            await asyncio.sleep(0.03)
+            return await get_client().post(
+                endpoint, headers=headers, data=data, params=params
+            )
         raise
 
-def delete(endpoint, headers=None, data=None, params=None):
-    return request(endpoint, DELETE, headers, data, params)
 
-def put(endpoint, headers=None, data=None, params=None):
-    return request(endpoint, PUT, headers, data, params)
+async def delete(endpoint, headers=None, data=None, params=None):
+    return await get_client().delete(
+        endpoint, headers=headers, data=data, params=params
+    )
+
+
+async def put(endpoint, headers=None, data=None, params=None):
+    return await get_client().put(
+        endpoint, headers=headers, data=data, params=params
+    )
+
 
 def build_query_params(url: str, param: str, val) -> str:
     last = url[-1]
     if last == "?":
         return "{}{}={}".format(url, param, val)
     return "{}&{}={}".format(url, param, val)
+
 
 def add_query_trade_params(
     base_url: str, params: TradeParams = None, next_cursor: str = "MA=="
@@ -150,6 +245,7 @@ def add_query_trade_params(
         url = build_query_params(url, "next_cursor", next_cursor)
     return url
 
+
 def add_query_open_orders_params(
     base_url: str, params: OpenOrderParams = None, next_cursor: str = "MA=="
 ) -> str:
@@ -170,6 +266,7 @@ def add_query_open_orders_params(
         url = build_query_params(url, "next_cursor", next_cursor)
     return url
 
+
 def drop_notifications_query_params(
     base_url: str, params: DropNotificationParams = None
 ) -> str:
@@ -178,6 +275,7 @@ def drop_notifications_query_params(
         url = url + "?"
         url = build_query_params(url, "ids", ",".join(params.ids))
     return url
+
 
 def add_balance_allowance_params_to_url(
     base_url: str, params: BalanceAllowanceParams = None
@@ -193,6 +291,7 @@ def add_balance_allowance_params_to_url(
             url = build_query_params(url, "signature_type", params.signature_type)
     return url
 
+
 def add_order_scoring_params_to_url(
     base_url: str, params: OrderScoringParams = None
 ) -> str:
@@ -201,6 +300,7 @@ def add_order_scoring_params_to_url(
         url = url + "?"
         url = build_query_params(url, "order_id", params.orderId)
     return url
+
 
 def add_orders_scoring_params_to_url(
     base_url: str, params: OrdersScoringParams = None
@@ -211,12 +311,14 @@ def add_orders_scoring_params_to_url(
         url = build_query_params(url, "order_ids", ",".join(params.orderIds))
     return url
 
+
 def parse_orders_scoring_params(params: OrdersScoringParams = None) -> dict:
     """Returns a query-params dict for the orders-scoring endpoint."""
     result = {}
     if params and params.orderIds:
         result["order_ids"] = ",".join(params.orderIds)
     return result
+
 
 def parse_drop_notification_params(params: DropNotificationParams = None) -> dict:
     """Returns a query-params dict for the drop-notifications endpoint."""

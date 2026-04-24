@@ -75,7 +75,9 @@ class RfqClient:
     def _ensure_l2_auth(self) -> None:
         self._parent.assert_level_2_auth()
 
-    def _get_l2_headers(self, method: str, endpoint: str, body=None, serialized_body=None) -> dict:
+    async def _get_l2_headers(
+        self, method: str, endpoint: str, body=None, serialized_body=None
+    ) -> dict:
         request_args = RequestArgs(method=method, request_path=endpoint, body=body)
         if serialized_body is not None:
             request_args.serialized_body = serialized_body
@@ -83,7 +85,7 @@ class RfqClient:
             self._parent.signer,
             self._parent.creds,
             request_args,
-            timestamp=self._parent._get_timestamp(),
+            timestamp=await self._parent._get_timestamp(),
         )
 
     def _build_url(self, endpoint: str) -> str:
@@ -93,7 +95,7 @@ class RfqClient:
     # Request-side methods
     # =========================================================================
 
-    def create_rfq_request(
+    async def create_rfq_request(
         self,
         user_request: RfqUserRequest,
         options: Optional[PartialCreateOrderOptions] = None,
@@ -106,7 +108,7 @@ class RfqClient:
         side = user_request.side
         size = user_request.size
 
-        tick_size = self._parent._ClobClient__resolve_tick_size(
+        tick_size = await self._parent._ClobClient__resolve_tick_size(
             token_id,
             options.tick_size if options else None,
         )
@@ -153,10 +155,14 @@ class RfqClient:
             "userType": user_type,
         }
         serialized_body = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
-        headers = self._get_l2_headers("POST", CREATE_RFQ_REQUEST, body, serialized_body)
-        return post(self._build_url(CREATE_RFQ_REQUEST), headers=headers, data=serialized_body)
+        headers = await self._get_l2_headers(
+            "POST", CREATE_RFQ_REQUEST, body, serialized_body
+        )
+        return await post(
+            self._build_url(CREATE_RFQ_REQUEST), headers=headers, data=serialized_body
+        )
 
-    def cancel_rfq_request(self, params: CancelRfqRequestParams) -> str:
+    async def cancel_rfq_request(self, params: CancelRfqRequestParams) -> str:
         """
         Cancel an RFQ request.
         """
@@ -164,29 +170,35 @@ class RfqClient:
 
         body = {"requestId": params.request_id}
         serialized_body = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
-        headers = self._get_l2_headers("DELETE", CANCEL_RFQ_REQUEST, body, serialized_body)
-        return delete(self._build_url(CANCEL_RFQ_REQUEST), headers=headers, data=serialized_body)
+        headers = await self._get_l2_headers(
+            "DELETE", CANCEL_RFQ_REQUEST, body, serialized_body
+        )
+        return await delete(
+            self._build_url(CANCEL_RFQ_REQUEST), headers=headers, data=serialized_body
+        )
 
-    def get_rfq_requests(self, params: Optional[GetRfqRequestsParams] = None) -> dict:
+    async def get_rfq_requests(
+        self, params: Optional[GetRfqRequestsParams] = None
+    ) -> dict:
         """
         Get RFQ requests with optional filtering.
         """
         self._ensure_l2_auth()
 
-        headers = self._get_l2_headers("GET", GET_RFQ_REQUESTS)
+        headers = await self._get_l2_headers("GET", GET_RFQ_REQUESTS)
         query_params = parse_rfq_requests_params(params)
 
         url = self._build_url(GET_RFQ_REQUESTS)
         if query_params:
             url = f"{url}?{urlencode(query_params, doseq=True)}"
 
-        return get(url, headers=headers)
+        return await get(url, headers=headers)
 
     # =========================================================================
     # Quote-side methods
     # =========================================================================
 
-    def create_rfq_quote(
+    async def create_rfq_quote(
         self,
         user_quote: RfqUserQuote,
         options: Optional[PartialCreateOrderOptions] = None,
@@ -200,7 +212,7 @@ class RfqClient:
         side = user_quote.side
         size = user_quote.size
 
-        tick_size = self._parent._ClobClient__resolve_tick_size(
+        tick_size = await self._parent._ClobClient__resolve_tick_size(
             token_id,
             options.tick_size if options else None,
         )
@@ -247,54 +259,64 @@ class RfqClient:
             "userType": user_type,
         }
         serialized_body = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
-        headers = self._get_l2_headers("POST", CREATE_RFQ_QUOTE, body, serialized_body)
-        return post(self._build_url(CREATE_RFQ_QUOTE), headers=headers, data=serialized_body)
+        headers = await self._get_l2_headers(
+            "POST", CREATE_RFQ_QUOTE, body, serialized_body
+        )
+        return await post(
+            self._build_url(CREATE_RFQ_QUOTE), headers=headers, data=serialized_body
+        )
 
-    def get_rfq_requester_quotes(self, params: Optional[GetRfqQuotesParams] = None) -> dict:
+    async def get_rfq_requester_quotes(
+        self, params: Optional[GetRfqQuotesParams] = None
+    ) -> dict:
         """
         Get quotes on requests created by the authenticated user (requester view).
         """
         self._ensure_l2_auth()
 
-        headers = self._get_l2_headers("GET", GET_RFQ_REQUESTER_QUOTES)
+        headers = await self._get_l2_headers("GET", GET_RFQ_REQUESTER_QUOTES)
         query_params = parse_rfq_quotes_params(params)
 
         url = self._build_url(GET_RFQ_REQUESTER_QUOTES)
         if query_params:
             url = f"{url}?{urlencode(query_params, doseq=True)}"
 
-        return get(url, headers=headers)
+        return await get(url, headers=headers)
 
-    def get_rfq_quoter_quotes(self, params: Optional[GetRfqQuotesParams] = None) -> dict:
+    async def get_rfq_quoter_quotes(
+        self, params: Optional[GetRfqQuotesParams] = None
+    ) -> dict:
         """
         Get quotes created by the authenticated user (quoter view).
         """
         self._ensure_l2_auth()
 
-        headers = self._get_l2_headers("GET", GET_RFQ_QUOTER_QUOTES)
+        headers = await self._get_l2_headers("GET", GET_RFQ_QUOTER_QUOTES)
         query_params = parse_rfq_quotes_params(params)
 
         url = self._build_url(GET_RFQ_QUOTER_QUOTES)
         if query_params:
             url = f"{url}?{urlencode(query_params, doseq=True)}"
 
-        return get(url, headers=headers)
+        return await get(url, headers=headers)
 
-    def get_rfq_best_quote(self, params: Optional[GetRfqBestQuoteParams] = None) -> dict:
+    async def get_rfq_best_quote(
+        self, params: Optional[GetRfqBestQuoteParams] = None
+    ) -> dict:
         """
         Get the best quote for an RFQ request.
         """
         self._ensure_l2_auth()
 
-        headers = self._get_l2_headers("GET", GET_RFQ_BEST_QUOTE)
+        headers = await self._get_l2_headers("GET", GET_RFQ_BEST_QUOTE)
 
         url = self._build_url(GET_RFQ_BEST_QUOTE)
         if params and params.request_id:
             url = f"{url}?{urlencode({'requestId': params.request_id})}"
 
-        return get(url, headers=headers)
+        return await get(url, headers=headers)
 
-    def cancel_rfq_quote(self, params: CancelRfqQuoteParams) -> str:
+    async def cancel_rfq_quote(self, params: CancelRfqQuoteParams) -> str:
         """
         Cancel an RFQ quote.
         """
@@ -302,14 +324,18 @@ class RfqClient:
 
         body = {"quoteId": params.quote_id}
         serialized_body = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
-        headers = self._get_l2_headers("DELETE", CANCEL_RFQ_QUOTE, body, serialized_body)
-        return delete(self._build_url(CANCEL_RFQ_QUOTE), headers=headers, data=serialized_body)
+        headers = await self._get_l2_headers(
+            "DELETE", CANCEL_RFQ_QUOTE, body, serialized_body
+        )
+        return await delete(
+            self._build_url(CANCEL_RFQ_QUOTE), headers=headers, data=serialized_body
+        )
 
     # =========================================================================
     # Trade execution methods
     # =========================================================================
 
-    def accept_rfq_quote(self, params: AcceptQuoteParams) -> str:
+    async def accept_rfq_quote(self, params: AcceptQuoteParams) -> str:
         """
         Accept an RFQ quote (requester side).
 
@@ -317,7 +343,7 @@ class RfqClient:
         """
         self._ensure_l2_auth()
 
-        resp = self.get_rfq_requester_quotes(
+        resp = await self.get_rfq_requester_quotes(
             GetRfqQuotesParams(quote_ids=[params.quote_id])
         )
 
@@ -339,7 +365,7 @@ class RfqClient:
             expiration=params.expiration,
         )
 
-        order = self._build_v1_order(order_args)
+        order = await self._build_v1_order(order_args)
 
         if not order:
             raise Exception("Error creating order")
@@ -364,14 +390,16 @@ class RfqClient:
         }
 
         serialized_body = json.dumps(accept_payload, separators=(",", ":"), ensure_ascii=False)
-        headers = self._get_l2_headers("POST", RFQ_REQUESTS_ACCEPT, accept_payload, serialized_body)
-        return post(
+        headers = await self._get_l2_headers(
+            "POST", RFQ_REQUESTS_ACCEPT, accept_payload, serialized_body
+        )
+        return await post(
             self._build_url(RFQ_REQUESTS_ACCEPT),
             headers=headers,
             data=serialized_body,
         )
 
-    def approve_rfq_order(self, params: ApproveOrderParams) -> str:
+    async def approve_rfq_order(self, params: ApproveOrderParams) -> str:
         """
         Approve an RFQ order (quoter side).
 
@@ -379,7 +407,7 @@ class RfqClient:
         """
         self._ensure_l2_auth()
 
-        rfq_quotes = self.get_rfq_quoter_quotes(
+        rfq_quotes = await self.get_rfq_quoter_quotes(
             GetRfqQuotesParams(quote_ids=[params.quote_id])
         )
 
@@ -406,7 +434,7 @@ class RfqClient:
             expiration=params.expiration,
         )
 
-        order = self._build_v1_order(order_args)
+        order = await self._build_v1_order(order_args)
 
         if not order:
             raise Exception("Error creating order")
@@ -430,8 +458,10 @@ class RfqClient:
             "signature": order.signature,
         }
         serialized_body = json.dumps(approve_payload, separators=(",", ":"), ensure_ascii=False)
-        headers = self._get_l2_headers("POST", RFQ_QUOTE_APPROVE, approve_payload, serialized_body)
-        return post(
+        headers = await self._get_l2_headers(
+            "POST", RFQ_QUOTE_APPROVE, approve_payload, serialized_body
+        )
+        return await post(
             self._build_url(RFQ_QUOTE_APPROVE),
             headers=headers,
             data=serialized_body,
@@ -441,28 +471,28 @@ class RfqClient:
     # Configuration
     # =========================================================================
 
-    def rfq_config(self) -> dict:
+    async def rfq_config(self) -> dict:
         """
         Get RFQ configuration from the server.
         """
         self._ensure_l2_auth()
 
-        headers = self._get_l2_headers("GET", RFQ_CONFIG)
-        return get(self._build_url(RFQ_CONFIG), headers=headers)
+        headers = await self._get_l2_headers("GET", RFQ_CONFIG)
+        return await get(self._build_url(RFQ_CONFIG), headers=headers)
 
     # =========================================================================
     # Private helpers
     # =========================================================================
 
-    def _build_v1_order(self, order_args: OrderArgsV1):
+    async def _build_v1_order(self, order_args: OrderArgsV1):
         """
         Build a signed V1 order via the parent's order builder.
 
         RFQ accept/approve always use V1 orders since the RFQ protocol
         requires the V1 order fields (taker, nonce, feeRateBps).
         """
-        tick_size = self._parent._ClobClient__resolve_tick_size(order_args.token_id)
-        neg_risk = self._parent.get_neg_risk(order_args.token_id)
+        tick_size = await self._parent._ClobClient__resolve_tick_size(order_args.token_id)
+        neg_risk = await self._parent.get_neg_risk(order_args.token_id)
         return self._parent.builder.build_order(
             order_args,
             CreateOrderOptions(tick_size=tick_size, neg_risk=neg_risk),
